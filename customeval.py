@@ -7,7 +7,7 @@ from natsort import natsorted
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
-from unet import UNet
+from network import UNet
 from empatches import EMPatches
 from argparse import ArgumentParser
 emp = EMPatches()
