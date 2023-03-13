@@ -19,7 +19,7 @@ def parse_args():
     parser = ArgumentParser(description='PyTorch implementation of Covid CT noise removal')
     parser.add_argument('-dr', '--data-dir', help='path to noisy dataset', default='/data/datasets/multiloccovnewpat/32bit_reconstructed_datasets/')
     parser.add_argument('-opdr', '--output-dir', help='output path', default='/data/cleaned_images/') 
-    parser.add_argument('--mdpt', help='path to saved weights', default='./ckpts/custom-1730/n2n-epoch27-0.00145.pt')
+    parser.add_argument('--mdpt', help='path to saved weights', default='./denoiser.pt')
     parser.add_argument('--cuda', help='use cuda', action='store_true')
     return parser.parse_args()
 
