@@ -10,7 +10,7 @@ Training Procedure:
 This is the general training procedure used for training this model.
 1. First, an Ansecombe transform was applied to the noisy images with correlated noise (G+P).
 2. Since the inter-slice width is negligible, the change in signal between two consecutive slices is approximately 0.
-3. However, noise varies between the two slices. Patches from slice[i] were used as input and the corresponding slice[i+1] patch was used target.
+3. However, noise varies between the two slices. Patches from slice[i] were used as input and the corresponding slice[i+1] patch was used as target.
 4. Over 100 epochs, the unet learns the mean of the observations (true signal) and produces clean image.
 
 
