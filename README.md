@@ -19,9 +19,11 @@ Instructions for running the code:
 1. Install Conda and create new environment with python>=3.7 
 2. Install the requirements mentioned in the requirements.txt
 3. Please use GPU for running the model.
+
 Sample code for running on terminal-
-          python customeval.py \
-            --data_dir ../data \
-            --output_dir ../data \
-            --mdpt ../denoiser.pt \
-            --cuda
+
+python customeval.py \
+--data_dir ../data \
+--output_dir ../data \
+--mdpt ../denoiser.pt \
+--cuda
