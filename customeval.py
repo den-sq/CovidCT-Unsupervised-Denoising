@@ -1,105 +1,102 @@
-
-
-import os
+import click
+from empatches import EMPatches
+from network import UNet
 import numpy as np
-import tifffile as tl
-from natsort import natsorted
+from pathlib import Path
+import tifffile as tf
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
-from network import UNet
-from empatches import EMPatches
-from argparse import ArgumentParser
+
 emp = EMPatches()
 
-def parse_args():
-    """Command-line argument parser for training."""
 
-    # New parser
-    parser = ArgumentParser(description='PyTorch implementation of Covid CT noise removal')
-    parser.add_argument('-dr', '--data-dir', help='path to noisy dataset', default='/data/datasets/multiloccovnewpat/32bit_reconstructed_datasets/')
-    parser.add_argument('-opdr', '--output-dir', help='output path', default='/data/cleaned_images/') 
-    parser.add_argument('--mdpt', help='path to saved weights', default='./denoiser.pt')
-    parser.add_argument('--cuda', help='use cuda', action='store_true')
-    return parser.parse_args()
+class TensorTransformMapping(Dataset):
+	def __init__(self, listofimgs):
+		self.list_of_images = listofimgs
+		self.trans = transforms.Compose([transforms.ToTensor()])
 
-params= parse_args()
+	def __len__(self):
+		""" Number of Images. """
+		return len(self.list_of_images)
+
+	def __getitem__(self, index):
+		""" Returns Tensor Transformed Version of Image. """
+		return self.trans(self.list_of_images[index])
+
+	def loader(self, batch_size=1, shuffle=False):
+		""" Gets Dataloader for Images """
+		DataLoader(self, batch_size=batch_size, shuffle=shuffle)
 
 
-
-pathtonoise=params.data_dir
-allimages=[pathtonoise+x for x in (natsorted(os.listdir(pathtonoise)))][-3:]
-print("Total Images to Denoise:",len(allimages))
-
-if not os.path.exists(params.output_dir):
-    os.mkdir(params.output_dir)
-    
-model = UNet(in_channels=1)
-if torch.cuda.is_available():
-    if not params.cuda:
-        print("please use argument- cuda to run model")
-    else:
-        print("Using GPU")
-        model=model.cuda()
-        model.load_state_dict(torch.load(params.mdpt))
-        model.eval()
-
-    
-
-class customdataset(Dataset):
-
-    def __init__(self,listofimgs):
-
-      
-        self.list_of_images=listofimgs
-        self.trans=transforms.Compose([transforms.ToTensor()])
-    def __len__(self):
-        return len(self.list_of_images)
-
-    def __getitem__(self, index):
-        noisy_img =self.list_of_images[index]
-        noisy_img=self.trans(noisy_img)
-        return noisy_img
-
-def loaddata(dataset):
-    return DataLoader(dataset, batch_size=1, shuffle=False)
 def norma(img):
-    norm = (img - np.min(img)) / (np.max(img) - np.min(img))
-    return norm
+	""" Basic Image Normalization. """
+	return (img - np.min(img)) / (np.max(img) - np.min(img))
+
 
 def tensortoimage(tor):
-    
-    img=tor.cpu()
-    img=img.squeeze(0)
-    img=img.squeeze(0)
-    img=img.numpy()
+	img = tor.cpu()
+	img = img.squeeze(0)
+	img = img.squeeze(0)
+	img = img.numpy()
+	return img
 
-    return img
-            
 
-for image in allimages:
-    imagename=image.split('/')[-1]
-    print("cleaning image:",imagename)
-    img=tl.imread(image)
-    fullsize=img.shape
-    trims=int((img.shape[0]%256)/2) #reshape to multiple of 256
-    img=img[trims:-trims,trims:-trims] #reshape to multiple of 256
-    newsize=img.shape
-    img=norma(img)
-    img_patches, indices = emp.extract_patches(img, patchsize=256, overlap=0.4)
-    datar=customdataset(img_patches) 
-    evaldata=loaddata(datar)
-    denoised_imgs=[]
-    for batch_idx, (source) in enumerate(evaldata):
-            if params.cuda and torch.cuda.is_available():
-                source = source.cuda()
-            # Denoise
-            denoised_img = model(source).detach()
-            denoised_img=tensortoimage(denoised_img)
-            denoised_imgs.append(denoised_img)
-    merged=emp.merge_patches(denoised_imgs, indices, mode='avg')
-    fullimage=np.zeros((fullsize),dtype='float32')
-    fullimage[trims:trims+newsize[0],trims:trims+newsize[1]]=merged
-    pathtosave=params.output_dir+'cleaned_'+imagename
-    print("saving image to",pathtosave)
-    tl.imsave(pathtosave,fullimage)
+def denoise(source, model, use_cuda):
+	if use_cuda:
+		source = source.cuda()
+	# Denoise
+	return tensortoimage(model(source).detach())
+
+
+@click.command()
+@click.option('--data-dir', type=click.Path(), help='Input path for noisy dataset', required=True)
+@click.option('--output-dir', type=click.Path(), help='Output path for cleaned images', default='data/clean/')
+@click.option('--mdpt', type=click.Path(), help='Path to stored saved weights', default='data/denoiser.pt')
+@click.option('--cuda/--no_cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
+@click.option("--patch_size", type=click.INT, help="Size of denoising patches", default=256)
+@click.option("--patch_overlap", type=click.FLOAT, help="Overlap between denoising patches", default=0.4)
+def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_overlap):
+	images = Path(data_dir).iterdir()
+	print("Total Images to Denoise:", len(images))
+
+	Path(output_dir).mkdir(exists_ok=True)
+
+	model = UNet(in_channels=1)
+
+	use_cuda = torch.cuda.is_available() and cuda
+
+	if use_cuda:
+		print("Using GPU")
+		model = model.cuda()
+		model.load_state_dict(torch.load(mdpt))
+		model.eval()
+	else:
+		print("CUDA GPU is Unavailable or Skipped by Request.")
+
+	for image in images:
+		print(f"Cleaning Image {image.name}")
+		img = tf.imread(image)
+
+		#  Trim (2D) for Patching matching Patch Size
+		trims = [(dim % patch_size) // 2 for dim in img.shape]
+		trim_index = np.s_[trims[0]:img.shape[0] - trims[0], trims[1]:img.shape[1] - trims[1]]
+
+		# Generate Patches of Normalized Data
+		img_patches, indices = emp.extract_patches(norma(img[trim_index]),
+													patchsize=patch_size, overlap=patch_overlap)
+
+		# Denoise and Remerge Patches
+		denoised_imgs = [denoise(source, model, use_cuda) for source in TensorTransformMapping(img_patches)]
+		merged = emp.merge_patches(denoised_imgs, indices, mode='avg')
+
+		# Write out patched image with original data in un-patched areas, as 32 bit.
+		out_img = img.astype(np.float32)
+		out_img[trim_index] = merged
+		out_path = Path(output_dir, f"CL_{image.name}")
+		print(f"Saving To {out_path}")
+		tf.imsave(out_path, out_img)
+
+
+if __name__ == "__main__":
+	unsupervised_denoise()
