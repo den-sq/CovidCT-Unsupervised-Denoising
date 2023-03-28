@@ -1,12 +1,14 @@
 import click
 from empatches import EMPatches
-from network import UNet
 import numpy as np
 from pathlib import Path
 import tifffile as tf
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
+
+from network import UNet
+import log
 
 emp = EMPatches()
 
@@ -26,7 +28,7 @@ class TensorTransformMapping(Dataset):
 
 	def loader(self, batch_size=1, shuffle=False):
 		""" Gets Dataloader for Images """
-		DataLoader(self, batch_size=batch_size, shuffle=shuffle)
+		return DataLoader(self, batch_size=batch_size, shuffle=shuffle)
 
 
 def norma(img):
@@ -57,25 +59,27 @@ def denoise(source, model, use_cuda):
 @click.option("--patch_size", type=click.INT, help="Size of denoising patches", default=256)
 @click.option("--patch_overlap", type=click.FLOAT, help="Overlap between denoising patches", default=0.4)
 def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_overlap):
-	images = Path(data_dir).iterdir()
-	print("Total Images to Denoise:", len(images))
+	images = list(Path(data_dir).iterdir())
+	log.log("Initialize", f"Total Images to Denoise: {len(images)}")
 
-	Path(output_dir).mkdir(exists_ok=True)
+	Path(output_dir).mkdir(exist_ok=True)
 
 	model = UNet(in_channels=1)
 
 	use_cuda = torch.cuda.is_available() and cuda
 
 	if use_cuda:
-		print("Using GPU")
+		log.log("Initialize", "Using GPU")
 		model = model.cuda()
 		model.load_state_dict(torch.load(mdpt))
 		model.eval()
+	elif cuda:
+		log.log("Initialize", "CUDA GPU Skipped by Request.")
 	else:
-		print("CUDA GPU is Unavailable or Skipped by Request.")
+		log.log("Initialize", "CUDA GPU Unavailable.")
 
 	for image in images:
-		print(f"Cleaning Image {image.name}")
+		log.log("Pass Start", f"Image {image.name}")
 		img = tf.imread(image)
 
 		#  Trim (2D) for Patching matching Patch Size
@@ -85,17 +89,23 @@ def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_ove
 		# Generate Patches of Normalized Data
 		img_patches, indices = emp.extract_patches(norma(img[trim_index]),
 													patchsize=patch_size, overlap=patch_overlap)
+		patch_loader = TensorTransformMapping(img_patches).loader()
+
+		log.log("Patch Creation", "Patches Created")
 
 		# Denoise and Remerge Patches
-		denoised_imgs = [denoise(source, model, use_cuda) for source in TensorTransformMapping(img_patches)]
+		denoised_imgs = [denoise(source, model, use_cuda) for source in patch_loader]
+
+		log.log("Denoising", "Patches Denoised")
+
 		merged = emp.merge_patches(denoised_imgs, indices, mode='avg')
 
 		# Write out patched image with original data in un-patched areas, as 32 bit.
 		out_img = img.astype(np.float32)
 		out_img[trim_index] = merged
 		out_path = Path(output_dir, f"CL_{image.name}")
-		print(f"Saving To {out_path}")
-		tf.imsave(out_path, out_img)
+		log.log("Pass Complete", f"Image Saved To  {out_path}")
+		tf.imwrite(out_path, out_img)
 
 
 if __name__ == "__main__":
