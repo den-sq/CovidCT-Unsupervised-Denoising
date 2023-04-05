@@ -23,8 +23,8 @@ def parse_args():
     parser = ArgumentParser(description='Covid CT denoiser training script')
 
     # Data parameters
-    parser.add_argument('-t', '--train-dir', help='training set path', default='/data/fish/5dpf_2_Sam51/Sam51/rec/')
-    parser.add_argument('-v', '--valid-dir', help='test set path', default='/data/fish/5dpf_2_Sam51/Sam51/rec/')
+    parser.add_argument('-t', '--train-dir', help='training set path', default='/data/train_recons/')
+    parser.add_argument('-v', '--valid-dir', help='test set path', default='/data/validation_recons/')
     parser.add_argument('--ckpt-save-path', help='checkpoint save path', default='./model/ckpts')
     parser.add_argument('--ckpt-overwrite', help='overwrite model checkpoint on save', action='store_true')
     parser.add_argument('--report-interval', help='batch report interval', default=128, type=int)
