@@ -33,18 +33,21 @@ class CTDataset(Dataset):
 		image2 = image2[randx:randx + self.crop_size, randy:randy + self.crop_size]
 		return image1, image2
 
-	def _norma(self, img):
-		dec = (np.max(img) - np.min(img))
-		if dec == 0.0:
-			dec = 0.00001
-		self.norm = (img - np.min(img)) / dec
-		return self.norm
+	def _norma(self, img, bottom_threshold, top_threshold):
+		""" Basic Image Normalization. """
+		floor = np.percentile(img, bottom_threshold)
+		ceiling = np.percentile(img, top_threshold)
+
+		normalized = img - floor
+		normalized[normalized < 0] = 0
+
+		return normalized / (ceiling - floor)
 
 	def __len__(self):
 		"""Returns length of dataset."""
 		return self.__data_size
 
-	def __getitem__(self, index):
+	def __getitem__(self, index, normalize_over):
 		"""Retrieves images from folder and creates iterator"""
 
 		# Load images
@@ -54,7 +57,8 @@ class CTDataset(Dataset):
 		tarimg = tf.imread(targetimage)
 		inpimg, tarimg = self._random_crop(inpimg, tarimg)
 
-		inpimg = self.trans(self._norma(inpimg))
-		tarimg = self.trans(self._norma(tarimg))
-
-		return inpimg, tarimg
+		if normalize_over is not None:
+			return (self.trans(self._norma(inpimg, normalize_over.start, normalize_over.stop)),
+					self.trans(self._norma(tarimg, normalize_over.start, normalize_over.stop)))
+		else:
+			return self.trans(inpimg), self.trans(tarimg)

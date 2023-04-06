@@ -9,6 +9,7 @@ import torchvision.transforms as transforms
 
 from network import UNet
 import log
+import cli
 
 emp = EMPatches()
 
@@ -34,7 +35,7 @@ class TensorTransformMapping(Dataset):
 def norma(img, bottom_threshold, top_threshold):
 	""" Basic Image Normalization. """
 	floor = np.percentile(img, bottom_threshold)
-	ceiling = np.percentile(img, 100.0 - top_threshold)
+	ceiling = np.percentile(img, top_threshold)
 
 	normalized = img - floor
 	normalized[normalized < 0] = 0
@@ -64,11 +65,9 @@ def denoise(source, model, use_cuda):
 @click.option('--cuda/--no_cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
 @click.option("--patch_size", type=click.INT, help="Size of denoising patches", default=256)
 @click.option("--patch_overlap", type=click.FLOAT, help="Overlap between denoising patches", default=0.4)
-@click.option("--bottom_threshold", type=click.FLOAT,
-									help="Percentile threshold for bottom of normalization for noise removal", default=15.0)
-@click.option("--top_threshold", type=click.FLOAT,
-									help="Percentile threshold for top of normalization for container removal", default=1.0)
-def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_overlap, bottom_threshold, top_threshold):
+@click.option("--normalize_over", type=cli.FRANGE, default=None,
+				help="Range of retained values to normalize over, by percentiles.")
+def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_overlap, normalize_over):
 	images = list(Path(data_dir).iterdir())
 	log.log("Initialize", f"Total Images to Denoise: {len(images)}")
 
@@ -97,8 +96,9 @@ def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_ove
 		trim_index = np.s_[trims[0]:img.shape[0] - trims[0], trims[1]:img.shape[1] - trims[1]]
 
 		# Generate Patches of Normalized Data
-		norm_img = norma(img[trim_index], bottom_threshold, top_threshold)
-		log.log("Image Normalization", f"B: {bottom_threshold} T: {top_threshold}")
+		if normalize_over is not None:
+			norm_img = norma(img[trim_index], normalize_over.start, normalize_over.stop)
+		log.log("Image Normalization", f"{normalize_over}")
 
 		img_patches, indices = emp.extract_patches(norm_img, patchsize=patch_size, overlap=patch_overlap)
 		patch_loader = TensorTransformMapping(img_patches).loader()
@@ -112,7 +112,7 @@ def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_ove
 		merged = emp.merge_patches(denoised_imgs, indices, mode='avg')
 		out_img = img.astype(np.float32)
 		out_img[trim_index] = merged
-		out_path = Path(output_dir, f"CL_t{top_threshold}b{bottom_threshold}_{patch_size}_{image.name}")
+		out_path = Path(output_dir, f"CL_{normalize_over}_{patch_size}_{image.name}")
 		log.log("Pass Complete", f"Image Saved To  {out_path}")
 		tf.imwrite(out_path, out_img)
 

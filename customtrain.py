@@ -1,5 +1,6 @@
 import click
 
+import cli
 from customdataset import CTDataset
 from ctdenoiser import CTDenoiser
 
@@ -16,17 +17,20 @@ from ctdenoiser import CTDenoiser
 @click.option('--plot-stats/--skip-plotting', type=click.BOOL, default=True, help='plot stats after every epoch')
 # Training hyperparameters
 @click.option('-lr', '--learning-rate', type=click.FLOAT, default=0.001, help='learning rate')
-@click.option('-a', '--adam', help='adam parameters', nargs='+', default=[0.9, 0.99, 1e-8], type=list)
+@click.option('-a', '--adam', type=click.float, multiple=True, default=[0.9, 0.99, 1e-8],
+	help='adam parameters')
 @click.option('-b', '--batch-size', type=click.INT, default=4, help='minibatch size')
 @click.option('-e', '--nb-epochs', type=click.INT, default=2, help='number of epochs')
-@click.option('-l', '--loss', type=click.Choice(['l1', 'l2']), default='l2', help='loss function')
-@click.option('--cuda/--no-cuda', type=click.BOOL, help='will use cuda by default', default=False)
+@click.option('-l', '--loss', type=click.Choice(['l1', 'l2']), default='l2', help='Loss function')
+@click.option('--cuda/--no-cuda', type=click.BOOL, help='Whether to enable CUDA usage (if available).', default=False)
 # Corruption parameters
 @click.option('-n', '--noise-type', type=click.Choice(['natural', 'poisson', 'text', 'mc']), default='natural',
 	help='Type of noise to target.')
-@click.option('-c', '--crop-size', help='random crop size', default=512, type=int)
+@click.option('-c', '--crop-size', type=click.INT, help='Size of random cropping.', default=512)
+@click.option("--normalize_over", type=cli.FRANGE, default=None,
+				help="Range of retained values to normalize over, by percentiles.")
 def unsupervised_training(train_dir, valid_dir, ckpt_save_path, ckpt_overwrite, report_interval, plot_stats,
-							learning_rate, adam, batch_size, nb_epochs, loss, cuda, noise_type, crop_size):
+							learning_rate, adam, batch_size, nb_epochs, loss, cuda, noise_type, crop_size, normalize_over):
 	"""Trains CT denoiser."""
 	# Train/valid datasets
 	train_loader = CTDataset(train_dir, crop_size).loader(batch_size, shuffle=True)
