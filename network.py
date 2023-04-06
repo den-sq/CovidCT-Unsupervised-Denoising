@@ -22,22 +22,10 @@ class UNet(nn.Module):
 			nn.MaxPool2d(2))
 
 		# Layers: enc_conv(i), pool(i); i=2..5
-		self._block2 = nn.Sequential(
+		self._block2, self._block2a, self._block2b, self._block2c = [nn.Sequential(
 			nn.Conv2d(48, 48, 3, stride=1, padding=1),
 			nn.ReLU(inplace=True),
-			nn.MaxPool2d(2))
-		self._block2a = nn.Sequential(
-			nn.Conv2d(48, 48, 3, stride=1, padding=1),
-			nn.ReLU(inplace=True),
-			nn.MaxPool2d(2))
-		self._block2b = nn.Sequential(
-			nn.Conv2d(48, 48, 3, stride=1, padding=1),
-			nn.ReLU(inplace=True),
-			nn.MaxPool2d(2))
-		self._block2c = nn.Sequential(
-			nn.Conv2d(48, 48, 3, stride=1, padding=1),
-			nn.ReLU(inplace=True),
-			nn.MaxPool2d(2))
+			nn.MaxPool2d(2)) for _ in range(4)]
 
 		# Layers: enc_conv6, upsample5
 		self._block3 = nn.Sequential(
@@ -58,31 +46,14 @@ class UNet(nn.Module):
 			nn.Conv2d(96, 96, kernel_size=3, stride=1, padding=0))
 
 		# Layers: dec_deconv(i)a, dec_deconv(i)b, upsample(i-1); i=4..2
-		self._block5 = nn.Sequential(
+		self._block5, self._block5a, self._block5b = [nn.Sequential(
 			nn.Conv2d(144, 96, 3, stride=1, padding=1),
 			nn.ReLU(inplace=True),
 			nn.Conv2d(96, 96, 3, stride=1, padding=1),
 			nn.ReLU(inplace=True),
 			nn.Upsample(scale_factor=2, mode='nearest'),
 			nn.ReflectionPad2d(1),
-			nn.Conv2d(96, 96, kernel_size=3, stride=1, padding=0))
-
-		self._block5a = nn.Sequential(
-			nn.Conv2d(144, 96, 3, stride=1, padding=1),
-			nn.ReLU(inplace=True),
-			nn.Conv2d(96, 96, 3, stride=1, padding=1),
-			nn.ReLU(inplace=True),
-			nn.Upsample(scale_factor=2, mode='nearest'),
-			nn.ReflectionPad2d(1),
-			nn.Conv2d(96, 96, kernel_size=3, stride=1, padding=0))
-		self._block5b = nn.Sequential(
-			nn.Conv2d(144, 96, 3, stride=1, padding=1),
-			nn.ReLU(inplace=True),
-			nn.Conv2d(96, 96, 3, stride=1, padding=1),
-			nn.ReLU(inplace=True),
-			nn.Upsample(scale_factor=2, mode='nearest'),
-			nn.ReflectionPad2d(1),
-			nn.Conv2d(96, 96, kernel_size=3, stride=1, padding=0))
+			nn.Conv2d(96, 96, kernel_size=3, stride=1, padding=0)) for _ in range(3)]
 
 		# Layers: dec_conv1a, dec_conv1b, dec_conv1c,
 		self._block6 = nn.Sequential(
@@ -115,16 +86,16 @@ class UNet(nn.Module):
 		pool5 = self._block2c(pool4)
 
 		# Decoder
-		upsample5 = self._block3(pool5)
-		concat5 = torch.cat((upsample5, pool4), dim=1)
-		upsample4 = self._block4(concat5)
-		concat4 = torch.cat((upsample4, pool3), dim=1)
-		upsample3 = self._block5(concat4)
-		concat3 = torch.cat((upsample3, pool2), dim=1)
-		upsample2 = self._block5a(concat3)
-		concat2 = torch.cat((upsample2, pool1), dim=1)
-		upsample1 = self._block5b(concat2)
-		concat1 = torch.cat((upsample1, x), dim=1)
+		upsample = self._block3(pool5)
+		concat = torch.cat((upsample, pool4), dim=1)
+		upsample = self._block4(concat)
+		concat = torch.cat((upsample, pool3), dim=1)
+		upsample = self._block5(concat)
+		concat = torch.cat((upsample, pool2), dim=1)
+		upsample = self._block5a(concat)
+		concat = torch.cat((upsample, pool1), dim=1)
+		upsample = self._block5b(concat)
+		concat = torch.cat((upsample, x), dim=1)
 
 		# Final activation
-		return self._block6(concat1)
+		return self._block6(concat)
