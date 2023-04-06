@@ -1,24 +1,11 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr  5 17:18:42 2023
-
-@author: aus79
-"""
-
-
-
-import torch
-import torch.nn as nn
+from argparse import ArgumentParser
 
 from customdataset import load_dataset
 from ctdenoiser import CTdenoiser
-from argparse import ArgumentParser
 
 
 def parse_args():
     """Command-line argument parser for training."""
-
     # New parser
     parser = ArgumentParser(description='Covid CT denoiser training script')
 
@@ -46,8 +33,6 @@ def parse_args():
     parser.add_argument('-p', '--noise-param', help='noise parameter (e.g. std for gaussian)', default=50, type=float)
     parser.add_argument('-s', '--seed', help='fix random seed', type=int)
     parser.add_argument('-c', '--crop-size', help='random crop size', default=512, type=int)
-    
-
     return parser.parse_args()
 
 
