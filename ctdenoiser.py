@@ -39,21 +39,22 @@ class CTDenoiser(object):
 		self.trainable = trainable
 		self._noise_type = noise_type
 		self._nb_epochs = nb_epochs
-		self._compile(loss, learning_rate, adam)
 		self._use_cuda = cuda and torch.cuda.is_available()
 		self._loss_str = loss
 
-	def _compile(self, loss, learning_rate, adam, nb_epochs):
+		self._compile(loss, learning_rate, adam)
+
+	def _compile(self, loss, learning_rate, adam):
 		"""Compiles model (architecture, loss function, optimizers, etc.)."""
 
 		self.model = UNet(in_channels=1)
 
 		# Set optimizer and loss, if in training mode
 		if self.trainable:
-			self.optim = Adam(self.model.parameters(), lr=learning_rate, betas=adam[:2], Seps=adam[2])
+			self.optim = Adam(self.model.parameters(), lr=learning_rate, betas=adam[:2], eps=adam[2])
 
 			# Learning rate adjustment
-			self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optim, patience=nb_epochs / 4,
+			self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optim, patience=self._nb_epochs / 4,
 															factor=0.5, verbose=True)
 
 			# Loss function
@@ -123,16 +124,11 @@ class CTDenoiser(object):
 		fill = int(progress * bar_size) + 1
 		print(f'\rBatch {batch_idx + 1:>{dec}d} [{"=" * fill}>{" " * (bar_size - fill)}] Train loss: {train_loss:>1.5f}')
 
-	def show_on_report(batch_idx, num_batches, loss, elapsed):
-		dec = int(np.ceil(np.log10(num_batches)))
-		log.log('Batch Complete',
-			f'{batch_idx + 1:>{dec}d} / {num_batches:d} | Avg loss: {loss:>1.5f} | Avg train time / batch: {int(elapsed):d} ms')
-
 	def _on_epoch_end(self, stats, train_loss, epoch, epoch_start, valid_loader,
 						plot_stats, ckpt_dir, ckpt_overwrite):
 		# Evaluate model on validation set
 		epoch_time = self.time_elapsed_since(epoch_start)[0]
-		valid_loss, valid_time, valid_psnr = self.eval(valid_loader)
+		valid_loss, valid_time, valid_psnr = self.model.eval(valid_loader)
 		self.show_on_epoch_end(epoch_time, valid_time, valid_loss, valid_psnr)
 
 		# Decrease learning rate if plateau
@@ -212,7 +208,7 @@ class CTDenoiser(object):
 				# Report/update statistics
 				time_meter.update(self.time_elapsed_since(batch_start)[1])
 				if (batch_idx + 1) % report_interval == 0 and batch_idx:
-					self.show_on_report(batch_idx, num_batches, loss_meter.avg, time_meter.avg)
+					show_on_report(batch_idx, num_batches, loss_meter.avg, time_meter.avg)
 					train_loss_meter.update(loss_meter.avg)
 					loss_meter.reset()
 					time_meter.reset()
@@ -224,3 +220,9 @@ class CTDenoiser(object):
 
 		train_elapsed = self.time_elapsed_since(train_start)[0]
 		log.log('Training Complete', f'Elapsed Time {train_elapsed}')
+
+
+def show_on_report(batch_idx, num_batches, loss, elapsed):
+	dec = int(np.ceil(np.log10(num_batches)))
+	log.log('Batch Complete',
+		f'{batch_idx + 1:>{dec}d} / {num_batches:d} | Avg loss: {loss:>1.5f} | Avg train time / batch: {int(elapsed):d} ms')

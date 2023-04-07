@@ -7,20 +7,24 @@ import tifffile as tf
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
+import log
+
 
 class CTDataset(Dataset):
-	def __init__(self, root_dir, crop_size=512):
+	def __init__(self, root_dir, normalize_over, crop_size=512):
 		"""Initializes abstract dataset."""
 		super(CTDataset, self).__init__()
 		self.imgs = []
 		self.root_dir = Path(root_dir)
+		self.normalize_over = normalize_over
 		self.crop_size = crop_size
 
-		if root_dir.exists():
-			self.inputs = natsorted(root_dir.iterdir())
-			self.targets = self.inputs[1:] + self.inputs[-2]
+		if self.root_dir.exists():
+			self.inputs = natsorted(self.root_dir.iterdir())
+			self.targets = self.inputs[1:] + [self.inputs[-2]]
 			self.__data_size = len(self.inputs)
 			self.trans = transforms.Compose([transforms.ToTensor()])
+			log.log("Creating Dataset", len(self.inputs))
 
 	def loader(self, batch_size, single=False, shuffle=False):
 		return DataLoader(self, batch_size=1 if single else batch_size, shuffle=shuffle)
@@ -47,7 +51,7 @@ class CTDataset(Dataset):
 		"""Returns length of dataset."""
 		return self.__data_size
 
-	def __getitem__(self, index, normalize_over):
+	def __getitem__(self, index):
 		"""Retrieves images from folder and creates iterator"""
 
 		# Load images
@@ -57,8 +61,8 @@ class CTDataset(Dataset):
 		tarimg = tf.imread(targetimage)
 		inpimg, tarimg = self._random_crop(inpimg, tarimg)
 
-		if normalize_over is not None:
-			return (self.trans(self._norma(inpimg, normalize_over.start, normalize_over.stop)),
-					self.trans(self._norma(tarimg, normalize_over.start, normalize_over.stop)))
+		if self.normalize_over is not None:
+			return (self.trans(self._norma(inpimg, self.normalize_over.start, self.normalize_over.stop)),
+					self.trans(self._norma(tarimg, self.normalize_over.start, self.normalize_over.stop)))
 		else:
 			return self.trans(inpimg), self.trans(tarimg)
