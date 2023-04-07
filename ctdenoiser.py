@@ -104,10 +104,9 @@ class CTDenoiser(object):
 		ms = int(timedelta.total_seconds() * 1000)
 		return string, ms
 
-	def show_on_epoch_end(self, epoch_time, valid_time, valid_loss, valid_psnr):
+	def show_on_epoch_end(self, epoch_time, valid_time, valid_loss):
 		log.log("Epoch Completion",
-			f'Train time: {epoch_time} ; Valid time: {valid_time} ; '
-			f'Valid loss: {valid_loss:>1.5f} ; Avg PSNR: {valid_psnr:.2f} dB')
+			f'Train time: {epoch_time} ; Valid time: {valid_time} ; Valid loss: {valid_loss:>1.5f}')
 
 	def load_model(self, ckpt_fname):
 		"""Loads model from checkpoint file."""
@@ -128,8 +127,8 @@ class CTDenoiser(object):
 						plot_stats, ckpt_dir, ckpt_overwrite):
 		# Evaluate model on validation set
 		epoch_time = self.time_elapsed_since(epoch_start)[0]
-		valid_loss, valid_time, valid_psnr = self.model.eval(valid_loader)
-		self.show_on_epoch_end(epoch_time, valid_time, valid_loss, valid_psnr)
+		valid_loss, valid_time = self.eval(valid_loader)
+		self.show_on_epoch_end(epoch_time, valid_time, valid_loss)
 
 		# Decrease learning rate if plateau
 		self.scheduler.step(valid_loss)
@@ -137,13 +136,12 @@ class CTDenoiser(object):
 		# Save checkpoint
 		stats['train_loss'].append(train_loss)
 		stats['valid_loss'].append(valid_loss)
-		stats['valid_psnr'].append(valid_psnr)
 		self.save_model(epoch, stats, ckpt_dir, ckpt_overwrite, epoch == 0)
 
-		# Plot stats
-		if plot_stats:
-			self.plot_per_epoch(ckpt_dir, 'Valid loss', stats['valid_loss'], f'{self._loss_str} Loss')
-			self.plot_per_epoch(ckpt_dir, 'Valid PSNR', stats['valid_psnr'], 'PSNR (dB)')
+		# Plot stats - No PSNR so no plotting
+		# if plot_stats:
+		# 	self.plot_per_epoch(ckpt_dir, 'Valid loss', stats['valid_loss'], f'{self._loss_str} Loss')
+		# 	self.plot_per_epoch(ckpt_dir, 'Valid PSNR', stats['valid_psnr'], 'PSNR (dB)')
 
 	def __create_checkpoint_dir(self, ckpt_save_path, ckpt_overwrite):
 		# Create directory for model checkpoints, if nonexistent
@@ -155,6 +153,31 @@ class CTDenoiser(object):
 		ckpt_dir = Path(ckpt_save_path, ckpt_dir_name)
 		ckpt_dir.mkdir(exist_ok=True, parents=True)
 		return ckpt_dir
+
+	def eval(self, valid_loader):
+		"""Evaluates denoiser on validation set."""
+
+		self.model.train(False)
+
+		valid_start = datetime.now()
+		loss_meter = AvgMeter()
+		# psnr_meter = AvgMeter()
+
+		for batch_idx, (source, target) in enumerate(valid_loader):
+			if self._use_cuda:
+				source = source.cuda()
+				target = target.cuda()
+
+			# Denoise
+			source_denoised = self.model(source)
+
+			# Update loss
+			loss = self.loss(source_denoised, target)
+			loss_meter.update(loss.item())
+
+		valid_loss = loss_meter.avg
+		valid_time = self.time_elapsed_since(valid_start)[0]
+		return valid_loss, valid_time
 
 	def train(self, train_loader, valid_loader, report_interval, plot_stats, ckpt_save_path, ckpt_overwrite):
 		"""Trains denoiser on training set."""
