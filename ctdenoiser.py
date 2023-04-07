@@ -180,8 +180,8 @@ class CTdenoiser(object):
         # Evaluate model on validation set
         print('\rTesting model on validation set... ', end='')
         epoch_time = self.time_elapsed_since(epoch_start)[0]
-        valid_loss, valid_time, valid_psnr = self.eval(valid_loader)
-        self.show_on_epoch_end(epoch_time, valid_time, valid_loss, valid_psnr)
+        valid_loss, valid_time = self.eval(valid_loader)
+        self.show_on_epoch_end(epoch_time, valid_time, valid_loss)
 
         # Decrease learning rate if plateau
         self.scheduler.step(valid_loss)
@@ -189,17 +189,35 @@ class CTdenoiser(object):
         # Save checkpoint
         stats['train_loss'].append(train_loss)
         stats['valid_loss'].append(valid_loss)
-        stats['valid_psnr'].append(valid_psnr)
+        
         self.save_model(epoch, stats, epoch == 0)
 
-        # Plot stats
-        if self.p.plot_stats:
-            loss_str = f'{self.p.loss.upper()} loss'
-            self.plot_per_epoch(self.ckpt_dir, 'Valid loss', stats['valid_loss'], loss_str)
-            self.plot_per_epoch(self.ckpt_dir, 'Valid PSNR', stats['valid_psnr'], 'PSNR (dB)')
+    def eval(self, valid_loader):
+        """Evaluates denoiser on validation set."""
 
+        self.model.train(False)
 
-  
+        valid_start = datetime.now()
+        loss_meter = AvgMeter()
+        psnr_meter = AvgMeter()
+
+        for batch_idx, (source, target) in enumerate(valid_loader):
+            if self.p.cuda:
+                source = source.cuda()
+                target = target.cuda()
+
+            # Denoise
+            source_denoised = self.model(source)
+
+            # Update loss
+            loss = self.loss(source_denoised, target)
+            loss_meter.update(loss.item())
+
+        valid_loss = loss_meter.avg
+        valid_time = time_elapsed_since(valid_start)[0]
+        
+
+        return valid_loss, valid_time
     def train(self, train_loader, valid_loader):
         """Trains denoiser on training set."""
 
