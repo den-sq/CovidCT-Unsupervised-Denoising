@@ -132,4 +132,4 @@ dmypy.json
 .pyre/
 
 # result data
-data/clean/*
+data/**/*.tif

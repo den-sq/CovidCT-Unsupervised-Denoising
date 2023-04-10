@@ -98,6 +98,8 @@ def unsupervised_denoise(data_dir, output_dir, mdpt, cuda, patch_size, patch_ove
 		# Generate Patches of Normalized Data
 		if normalize_over is not None:
 			norm_img = norma(img[trim_index], normalize_over.start, normalize_over.stop)
+		else:
+			norm_img = img[trim_index]
 		log.log("Image Normalization", f"{normalize_over}")
 
 		img_patches, indices = emp.extract_patches(norm_img, patchsize=patch_size, overlap=patch_overlap)
