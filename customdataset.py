@@ -42,6 +42,11 @@ class CTDataset(Dataset):
 		floor = np.percentile(img, bottom_threshold)
 		ceiling = np.percentile(img, top_threshold)
 
+		if floor == ceiling:
+			log.log("Normalization", f"{floor}:{ceiling}:{np.max(img)}:{np.min(img)}", log_level=log.DEBUG.WARN)
+			ceiling = np.max(img)
+			floor = np.min(img)
+
 		normalized = img - floor
 		normalized[normalized < 0] = 0
 
