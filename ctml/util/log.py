@@ -1,26 +1,14 @@
-from collections import namedtuple
 from datetime import datetime
 from enum import Enum
 from sys import stdout
 from typing import TextIO
 
 import click
-import numpy as np
 import psutil
 
 script_start = datetime.now()
 
-Mem = namedtuple("Mem", ['shape', 'name', 'dtype'])
-
 __attached_funcs = []
-
-
-def mem_size(mem, swap=None):
-	if swap is None:
-		shape = mem.shape
-	else:
-		shape = [swap[x] if swap[x] is not None else mem.shape[x] for x in range(len(swap))]
-	return int(np.prod(shape, dtype=np.float64) * np.dtype(mem.dtype).itemsize)
 
 
 # More specific debug-level logging.
@@ -54,11 +42,23 @@ def __log_message(step: str, statement: str = '', log_level: DEBUG = DEBUG.TIME)
 	return message
 
 
+def start():
+	click.echo(f'{"TYPE":6}|{"STEP":20}|   TIMESTAMP   | MEM USAGE | MEM FREE  | STATEMENT ')
+	log("Script Start", script_start)
+
+
 def log(step: str, statement: str = '', log_level: DEBUG = DEBUG.TIME, out: TextIO = stdout,
 		pid: int = psutil.Process().pid):
 	for func in __attached_funcs:
 		func(step, pid)
 	click.echo(__log_message(step, statement, log_level), file=out, err=(log_level == DEBUG.ERROR))
+
+
+def log_progress(step: str, items, length=None, disp=None, out: TextIO = stdout):
+	styled_type = click.style(f'{DEBUG.STATUS.name:6}', DEBUG.STATUS.color)
+	return click.progressbar(items, length=length, item_show_func=disp, file=out, show_eta=True, show_pos=True,
+				label=f'{styled_type}|{step[:20]:20}', info_sep='|', width=39,
+				bar_template="%(label)s|%(bar)s|%(info)s|")
 
 
 def log_confirm(step: str, statement: str = '', log_level: DEBUG = DEBUG.TIME, out: TextIO = stdout,
@@ -76,6 +76,11 @@ def log_prompt(step: str, statement: str = '', log_level: DEBUG = DEBUG.TIME, ou
 
 
 def attach_func(func: callable):
+	""" Attaches a function to be called during a logging step.
+		e.g. can be used to pass data to other processes for more granular logging.
+
+		:param func:  Callable object to be called on each log.
+		"""
 	if func not in __attached_funcs:
 		__attached_funcs.append(func)
 

@@ -1,7 +1,7 @@
-torch
-torchvision
 numpy
-matplotlib
 natsort
 empatches
 tifffile
+click
+psutil
+ruamel.yaml
