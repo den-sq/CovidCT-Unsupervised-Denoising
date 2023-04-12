@@ -15,15 +15,28 @@ yaml = YAML()
 
 @yaml_object(yaml)
 class FloatRange:
-	start: float
-	stop: float
-	step: float
+	""" Range for Float Variables
+
+		An internal array is used, but only created once an item is accessed.
+		It is recreated once created whenever a parameter is updated,
+		so for large ranges that usage could be sluggish.
+	"""
+
+	_start: float
+	_stop: float
+	_step: float
+	_space: np.array(float)
 	yaml_tag = '!FloatRange'
 
 	def __init__(self, start, stop, step):
-		self.start = start
-		self.stop = stop
-		self.step = step
+		self._start = start
+		self._stop = stop
+		self._step = step
+		self._space = None
+
+	def _update_space(self):
+		steps = int((self.start - self.stop) // self.step) + 1
+		self._space = np.linspace(self.start, self.stop, steps)
 
 	@classmethod
 	def to_yaml(cls, representer, node):
@@ -36,13 +49,45 @@ class FloatRange:
 	def __str__(self):
 		return f"{self.start},{self.stop},{self.step}"
 
-	def as_array(self):
-		steps = int((self.start - self.stop) // self.step) + 1
-		return np.linspace(self.start, self.stop, steps)
+	@property
+	def start(self):
+		return self._start
+
+	@start.setter
+	def start(self, value):
+		self._start = value
+		if self._space is not None:
+			self._update_space()
+
+	@property
+	def stop(self):
+		return self._stop
+
+	@stop.setter
+	def stop(self, value):
+		self._stop = value
+		if self._space is not None:
+			self._update_space()
+
+	@property
+	def step(self):
+		return self._step
+
+	@stop.setter
+	def stop(self, value):
+		self._step = value
+		if self._space is not None:
+			self._update_space()
+
+	def __getitem__(self, index):
+		if self._space is None:
+			self._update_space()
+		return self.space[index]
 
 
 # Click Parameter: Float Range (Imitated by linspace).
 class Frange(click.ParamType):
+	""" click parameter type for float ranges. """
 	name = "Float Range"
 
 	def convert(self, value, param, ctx):
@@ -63,10 +108,11 @@ FRANGE = Frange()
 @click.option('-w', '--weights', type=click.Path(), help='Path to stored saved weights', default='data/weights.pt')
 @click.option('-n', '--normalize-over', type=FRANGE, default=None,
 				help="Range of retained values to normalize over, by percentiles.")
-@click.option('-p', '--patch_size', type=click.INT, help="Size of image patches for analysis.", default=512)
+@click.option('-p', '--patch-size', type=click.INT, help="Size of image patches for analysis.", default=512)
 @click.option('-b', '--batch-size', type=click.INT, default=4, help='# of Images for CUDA to batch process at once.')
-@click.option('--cuda/--no_cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
+@click.option('--cuda/--no-cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
 def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, cuda):
+	""" Applies ML methods to CT Data."""
 	if data_dir is None:
 		pass
 	elif Path(data_dir).exists():
@@ -104,7 +150,7 @@ def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, cuda):
 @click.pass_context
 def utraining(ctx, valid_dir, ckpt_save_path, ckpt_overwrite, report_interval, plot_stats,
 							learning_rate, adam, nb_epochs, loss, noise_type):
-	"""Trains an Unsupervised ML Denoiser based on Noise2Noise ()"""
+	"""Trains an Unsupervised ML Denoiser based on Noise2Noise () """
 
 	# Load training and validation datasets
 	if valid_dir is None:
@@ -124,10 +170,14 @@ def utraining(ctx, valid_dir, ckpt_save_path, ckpt_overwrite, report_interval, p
 
 @ctml.command()
 @click.option('-o', '--output-dir', type=click.Path(), help='Output path for cleaned images', default='data/clean/')
-@click.option("--patch_overlap", type=click.FLOAT, help="Overlap between denoising patches", default=0.4)
+@click.option("--patch-overlap", type=click.FLOAT, help="Overlap between denoising patches", default=0.4)
 @click.pass_context
 def udenoise(ctx, output_dir, patch_overlap):
-	"""Applies an Unsupervised ML Denoiser based on Noise2Noise ()"""
+	"""Applies an Unsupervised ML Denoiser based on Noise2Noise ()
+
+		Ignores parent batch-size parameter due to empatches limitations.
+		"""
+
 	log.log("Initialize Denoise", f"Total Images to Denoise: {len(ctx.obj.inputs)}")
 
 	Path(output_dir).mkdir(exist_ok=True)
@@ -145,9 +195,9 @@ def udenoise(ctx, output_dir, patch_overlap):
 		log.log("Pass Start", f"Image {image.name}")
 
 		# Load image and create patches.  Normalizes if needed.
-		patches, ds = FileSet.PATCHES.load(ctx.obj, image=image, overlap=patch_overlap)
+		patches, ds = FileSet.PATCHES.load(ctx.obj, single=True, image=image, overlap=patch_overlap)
 
-		# Denoises patches and merges back into original image, returning.
+		# Denoises patches and merges back into original image, returning merged image.
 		out_img = denoiser.denoise(patches, ds)
 
 		out_path = Path(output_dir, f"CL_{image.name}")

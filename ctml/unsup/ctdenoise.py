@@ -1,21 +1,27 @@
 import numpy as np
 
-from util.ctdataset import emp
+from util.ctdataset import emp, CTDenoisingSet
 from util import log
 
 
 class CTDenoiser(object):
-	def __init__(self, model, use_cuda):
+	def __init__(self, model, use_cuda: bool):
 		self.__model = model
 		self.__use_cuda = use_cuda
 
-	def __apply_model(self, source):
+	def __apply_model(self, source: np.array):
 		if self.__use_cuda:
 			source = source.cuda()
 
 		return tensortoimage(self.__model(source).detach())
 
-	def denoise(self, patches, ds):
+	def denoise(self, patches, ds: CTDenoisingSet):
+		""" Applies denoising model to dataset.
+
+			:param patches: DataLoader for patches to denoise.
+			:param ds: Patches dataset.
+			"""
+
 		# Denoise and Remerge Patches
 		denoised_imgs = [self.__apply_model(source) for source in patches]
 		log.log("Denoising", "Patches Denoised")

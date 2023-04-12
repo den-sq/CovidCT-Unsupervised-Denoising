@@ -1,3 +1,4 @@
+from collections import namedtuple
 from enum import Enum
 from pathlib import Path
 import random
@@ -13,10 +14,11 @@ from util import log
 
 emp = EMPatches()
 
+coord = namedtuple("coord", ["x", "y"])
+
 
 class CTDataset(Dataset):
 	def __init__(self, root_dir, normalize_over, batch_size, patch_size, weights):
-		"""Initializes abstract dataset."""
 		super().__init__()
 		self.imgs = []
 		self.root_dir = Path(root_dir)
@@ -31,7 +33,7 @@ class CTDataset(Dataset):
 			log.log("Creating Dataset", len(self.inputs))
 
 	def _norma(self, img, bottom_threshold, top_threshold):
-		""" Basic Image Normalization. """
+		""" Basic image normalization steps. """
 		floor = np.percentile(img, bottom_threshold)
 		ceiling = np.percentile(img, top_threshold)
 
@@ -47,26 +49,28 @@ class CTDataset(Dataset):
 
 	@property
 	def patch_size(self):
+		""" Size of patches within an image to use for ML analysis. """
 		return self.__patch_size
 
 	@property
 	def weights(self):
+		""" Location of ML saved weights. """
 		return self.__weights
 
 	@property
 	def batch_size(self):
+		""" # of patches sent to GPU at once for multiprocessing. """
 		return self.__batch_size
 
 	def __len__(self):
-		"""Returns length of dataset."""
 		return len(self.inputs)
 
 	def __getitem__(self, index):
-		"""Retrieves images from folder and creates iterator"""
 		return self.trans(self.inputs[index])
 
 	@staticmethod
 	def dup(ds):
+		""" Returns a CTDataset duplicate of passed in dataset. """
 		return CTDataset(ds.root_dir, ds.normalize_over, ds.batch_size, ds.patch_size, ds.weights)
 
 
@@ -102,7 +106,13 @@ class CTDenoisingSet(CTDataset):
 		return self.__indices
 
 	@staticmethod
-	def extract(ds, image, patch_overlap):
+	def extract(ds: CTDataset, image, patch_overlap: float):
+		""" Extracts a denoising dataset consisting of patches of an existing image.
+
+			:param ds: Dataset image is from.
+			:param image: Image to extract a patch set from.
+			:param patch_overlap: Overlap value between patches.
+		"""
 		return CTDenoisingSet(image, ds.normalize_over, ds.batch_size, ds.patch_size, patch_overlap, ds.weights)
 
 
@@ -112,15 +122,18 @@ class CTTrainingSet(CTDataset):
 		self.targets = self.inputs[1:] + [self.inputs[-2]]
 
 	def _random_crop(self, image1, image2):
-		m, n = image1.shape
-		randx = random.randint(0, m - (self.patch_size + 5))
-		randy = random.randint(0, n - (self.patch_size + 5))
-		image1 = image1[randx:randx + self.patch_size, randy:randy + self.patch_size]
-		image2 = image2[randx:randx + self.patch_size, randy:randy + self.patch_size]
-		return image1, image2
+		image_dim = coord(*image1.shape)
+		pos = coord(random.randint(0, image_dim.x - (self.patch_size + 4)),
+					random.randint(0, image_dim.y - (self.patch_size + 4)))
+		crop = np.s_[pos.x:pos.x + self.patch_size, pos.y:pos.y + self.patch_size]
+		return image1[crop], image2[crop]
 
 	def __getitem__(self, index):
-		"""Retrieves images from folder and creates iterator"""
+		"""Creates and returns GPU-located crops of the source and target images for the index.
+
+			Returned images are cropped and normalized according to the dataset's batch size
+			and normalization parameters.
+		"""
 
 		# Load images
 		inputimage = self.inputs[index]
@@ -137,28 +150,32 @@ class CTTrainingSet(CTDataset):
 
 	@staticmethod
 	def dup(ds):
+		""" Creates a CTTrainingSet duplicate of a CTDataset. """
 		return CTTrainingSet(ds.root_dir, ds.normalize_over, ds.batch_size, ds.patch_size, ds.weights)
 
 
 class FileSet(Enum):
+	""" Enum handling different kinds of file loads from a DataSet. """
 	TRAIN = 0,
 	VALIDATE = 1,
 	FULL = 2,
 	PATCHES = 3
 
-	def load(self, ds: Dataset, batch_size=None, image=None, overlap=False, single=False, shuffle=False):
-		if batch_size is None:
-			batch_size = ds.batch_size
+	def load(self, ds: Dataset, image=None, overlap=False, single=False, shuffle=False):
+		""" Loads a given dataset into a dataloader based on what kind of FileSet this is.
+
+			:param ds: Dataset to load.
+		"""
 		if self == FileSet.PATCHES:
 			ds_two = CTDenoisingSet.extract(ds, image, overlap)
-			return DataLoader(ds_two, batch_size=1 if single else batch_size, shuffle=shuffle), ds_two
+			return DataLoader(ds_two, batch_size=1 if single else ds.batch_size, shuffle=shuffle), ds_two
 		else:
 			dup = CTTrainingSet.dup(ds)
 			if self == FileSet.TRAIN:
 				return DataLoader(Subset(dup, range(0, int(len(dup) * 0.75))),
-									batch_size=1 if single else batch_size, shuffle=shuffle)
+									batch_size=1 if single else ds.batch_size, shuffle=shuffle)
 			elif self == FileSet.VALIDATE:
 				return DataLoader(Subset(dup, range(int(len(dup) * 0.75), len(ds))),
-									batch_size=1 if single else batch_size, shuffle=shuffle)
+									batch_size=1 if single else ds.batch_size, shuffle=shuffle)
 			elif self == FileSet.FULL:
-				return DataLoader(dup, batch_size=1 if single else batch_size, shuffle=shuffle)
+				return DataLoader(dup, batch_size=1 if single else ds.batch_size, shuffle=shuffle)

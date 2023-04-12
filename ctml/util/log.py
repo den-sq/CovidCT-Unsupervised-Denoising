@@ -4,20 +4,11 @@ from sys import stdout
 from typing import TextIO
 
 import click
-import numpy as np
 import psutil
 
 script_start = datetime.now()
 
 __attached_funcs = []
-
-
-def mem_size(mem, swap=None):
-	if swap is None:
-		shape = mem.shape
-	else:
-		shape = [swap[x] if swap[x] is not None else mem.shape[x] for x in range(len(swap))]
-	return int(np.prod(shape, dtype=np.float64) * np.dtype(mem.dtype).itemsize)
 
 
 # More specific debug-level logging.
@@ -85,6 +76,11 @@ def log_prompt(step: str, statement: str = '', log_level: DEBUG = DEBUG.TIME, ou
 
 
 def attach_func(func: callable):
+	""" Attaches a function to be called during a logging step.
+		e.g. can be used to pass data to other processes for more granular logging.
+
+		:param func:  Callable object to be called on each log.
+		"""
 	if func not in __attached_funcs:
 		__attached_funcs.append(func)
 
