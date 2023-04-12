@@ -133,3 +133,5 @@ dmypy.json
 
 # result data
 data/**/*.tif
+data/train/*
+data/ckpts/*
