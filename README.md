@@ -43,6 +43,7 @@ python ctml udenoise --help
 2. Install Pytorch.  Links below as per time of writing.
 	1. CUDA >= 11.7: [Current Version](https://pytorch.org/get-started/locally/)
 	2. CUDA < 11.7: [Old Version](https://pytorch.org/get-started/previous-versions/)
+
 	As this will limit available python versions and is hardware dependent, should be done before installing other requirements.
 3. Install requirements via conda or pip:
 	conda env update  
