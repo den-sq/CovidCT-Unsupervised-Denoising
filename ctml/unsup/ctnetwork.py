@@ -4,6 +4,8 @@
 import torch
 import torch.nn as nn
 
+use_cuda = False
+
 
 class UNet(nn.Module):
 	"""Custom U-Net architecture for Noise2Noise (see Appendix, Table 2)."""
