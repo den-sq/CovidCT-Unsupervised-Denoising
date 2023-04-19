@@ -41,6 +41,7 @@ class CTDataset(Dataset):
 			# log.log("Normalization", f"{floor}:{ceiling}:{np.max(img)}:{np.min(img)}", log_level=log.DEBUG.WARN)
 			ceiling = np.max(img)
 			floor = np.min(img)
+			if ceiling == floor: ceiling += 0.001 	# noqa: E701
 
 		normalized = img - floor
 		normalized[normalized < 0] = 0
