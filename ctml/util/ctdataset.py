@@ -88,19 +88,14 @@ class CTDenoisingSet(CTDataset):
         super().__init__(".", normalize_over, batch_size, patch_size, weights)
         self._get_tiff_detail(image)
         self.__img = tf.imread(image)
-
-        #  Trim (2D) for Patching matching Patch Size
-        trims = [(dim % patch_size) // 2 for dim in self.__img.shape]
-        self.__trim_index = np.s_[trims[0]:self.__img.shape[0] - trims[0], trims[1]:self.__img.shape[1] - trims[1]]
+        log.log("Image Load", f"{image}")
 
         # Generate Patches of Normalized Data
         if normalize_over is not None:
-            norm_img = self._norma(self.__img[self.__trim_index], normalize_over.start, normalize_over.stop)
-        else:
-            norm_img = self.__img[self.trim_index]
+            self.__img = self._norma(self.__img, normalize_over.start, normalize_over.stop)
         log.log("Image Normalization", f"{normalize_over}")
 
-        self.inputs, self.__indices = emp.extract_patches(norm_img, patchsize=patch_size, overlap=patch_overlap)
+        self.inputs, self.__indices = emp.extract_patches(self.__img, patchsize=patch_size, overlap=patch_overlap)
         log.log("Patch Creation", f"Patches Created ({len(self.indices)})")
 
     @property

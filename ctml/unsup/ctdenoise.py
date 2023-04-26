@@ -29,10 +29,8 @@ class CTDenoiser(object):
 
         # Write out patched image with original data in un-patched areas, as 32 bit.
         merged = emp.merge_patches(denoised_imgs, ds.indices, mode='avg')
-        out_img = ds.img.astype(np.float32)
-        out_img[ds.trim_index] = merged
-
         log.log("Merging", "Image Merged")
+
         return merged
 
 
