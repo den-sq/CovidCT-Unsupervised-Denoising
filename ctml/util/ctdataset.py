@@ -31,7 +31,6 @@ class CTDataset(Dataset):
         if self.root_dir.exists():
             self.inputs = natsorted(self.root_dir.iterdir())
             log.log("Creating Dataset", len(self.inputs))
-            self._get_tiff_detail(self.inputs[0])
 
     def _get_tiff_detail(self, img):
         with tf.TiffFile(img) as tif:
@@ -87,6 +86,7 @@ class CTDataset(Dataset):
 class CTDenoisingSet(CTDataset):
     def __init__(self, image, normalize_over, batch_size, patch_size, patch_overlap, weights):
         super().__init__(".", normalize_over, batch_size, patch_size, weights)
+        self._get_tiff_detail(image)
         self.__img = tf.imread(image)
 
         #  Trim (2D) for Patching matching Patch Size
@@ -129,6 +129,7 @@ class CTDenoisingSet(CTDataset):
 class CTTrainingSet(CTDataset):
     def __init__(self, root_dir, normalize_over, batch_size, patch_size, weights):
         super().__init__(root_dir, normalize_over, batch_size, patch_size, weights)
+        self._get_tiff_detail(self.inputs[0])
         self.targets = self.inputs[1:] + [self.inputs[-2]]
 
     def _random_crop(self):
