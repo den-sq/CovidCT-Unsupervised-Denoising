@@ -39,14 +39,15 @@ python ctml udenoise --help
 3. While CUDA is technically not required, model is too computationally intensive for straight CPU usage.
 
 ### Installation:
-1. Create a conda environment, which is necessary foor use of CUDA GPU tools.
-2. Install Pytorch.  Links below as per time of writing.
+1. [Install CUDA](https://developer.nvidia.com/cuda-downloads) as appropriate for your OS, if not already installed.
+2. Create and activate a conda environment, which is necessary for use of CUDA GPU tools.
+3. Install Pytorch.  Links below as per time of writing.
 	1. CUDA >= 11.7: [Current Version](https://pytorch.org/get-started/locally/)
 	2. CUDA < 11.7: [Old Version](https://pytorch.org/get-started/previous-versions/)
 
 	As this will limit available python versions and is hardware dependent, should be done before installing other requirements.
-3. Install requirements via conda or pip:  
+4. Install requirements via conda or pip:
 	conda env update -f ctml.yaml  
 	pip install -r requirements.txt
 
-	Note that pytorch is required but not listed in the requirements due to variance in CUDA version requirements.
+	Note that pytorch is required but not listed in the requirements due to variance in CUDA version requirements.	
