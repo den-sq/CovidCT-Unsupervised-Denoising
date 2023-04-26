@@ -16,8 +16,8 @@ A pretrained weight set (trained on 9680x9680 sample, 100 epochs) is present at 
 #### Usage:
 python ctml --data-dir data/train --weights data/final.pt --cuda utraining --nb-epochs 100
 
-For full paramter listing see
-python ctml --help
+For full paramter listing see  
+python ctml --help  
 python ctml utraining --help
 
 ### Model Application
@@ -27,8 +27,8 @@ The finalized model is applied to the input file in patches, that are merged tog
 #### Usage:
 python ctml --data-dir data/train --weights data/denoiser.pt --cuda udenoise --output-dir=data/clean
 
-For full paramter listing see
-python ctml --help
+For full paramter listing see  
+python ctml --help  
 python ctml udenoise --help
 
 (Note that the batch-size parameter listed in python ctml --help is ignored here due to limitations of empatches).
