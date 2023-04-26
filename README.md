@@ -28,7 +28,7 @@ python ctml utraining --help
 The finalized model is applied to the input file in patches, that are merged together.
 
 #### Usage:
-python ctml --data-dir data/train --weights data/denoiser.pt --cuda udenoise --output-dir=data/clean
+python ctml --data-dir data/train --weights data/denoise_phase.pt --cuda udenoise --output-dir=data/clean
 
 For full paramter listing see  
 python ctml --help  
