@@ -15,88 +15,88 @@ yaml = YAML()
 
 @yaml_object(yaml)
 class FloatRange:
-	""" Range for Float Variables
+    """ Range for Float Variables
 
-		An internal array is used, but only created once an item is accessed.
-		It is recreated once created whenever a parameter is updated,
-		so for large ranges that usage could be sluggish.
-	"""
+        An internal array is used, but only created once an item is accessed.
+        It is recreated once created whenever a parameter is updated,
+        so for large ranges that usage could be sluggish.
+    """
 
-	_start: float
-	_stop: float
-	_step: float
-	_space: np.array(float)
-	yaml_tag = '!FloatRange'
+    _start: float
+    _stop: float
+    _step: float
+    _space: np.array(float)
+    yaml_tag = '!FloatRange'
 
-	def __init__(self, start, stop, step):
-		self._start = start
-		self._stop = stop
-		self._step = step
-		self._space = None
+    def __init__(self, start, stop, step):
+        self._start = start
+        self._stop = stop
+        self._step = step
+        self._space = None
 
-	def _update_space(self):
-		steps = int((self.start - self.stop) // self.step) + 1
-		self._space = np.linspace(self.start, self.stop, steps)
+    def _update_space(self):
+        steps = int((self.start - self.stop) // self.step) + 1
+        self._space = np.linspace(self.start, self.stop, steps)
 
-	@classmethod
-	def to_yaml(cls, representer, node):
-		return representer.represent_scalar(cls.yaml_tag, str(node))
+    @classmethod
+    def to_yaml(cls, representer, node):
+        return representer.represent_scalar(cls.yaml_tag, str(node))
 
-	@classmethod
-	def from_yaml(cls, constructor, node):
-		return cls(*node.value.split(","))
+    @classmethod
+    def from_yaml(cls, constructor, node):
+        return cls(*node.value.split(","))
 
-	def __str__(self):
-		return f"{self.start},{self.stop},{self.step}"
+    def __str__(self):
+        return f"{self.start},{self.stop},{self.step}"
 
-	@property
-	def start(self):
-		return self._start
+    @property
+    def start(self):
+        return self._start
 
-	@start.setter
-	def start(self, value):
-		self._start = value
-		if self._space is not None:
-			self._update_space()
+    @start.setter
+    def start(self, value):
+        self._start = value
+        if self._space is not None:
+            self._update_space()
 
-	@property
-	def stop(self):
-		return self._stop
+    @property
+    def stop(self):
+        return self._stop
 
-	@stop.setter
-	def stop(self, value):
-		self._stop = value
-		if self._space is not None:
-			self._update_space()
+    @stop.setter
+    def stop(self, value):
+        self._stop = value
+        if self._space is not None:
+            self._update_space()
 
-	@property
-	def step(self):
-		return self._step
+    @property
+    def step(self):
+        return self._step
 
-	@stop.setter
-	def stop(self, value):
-		self._step = value
-		if self._space is not None:
-			self._update_space()
+    @stop.setter
+    def stop(self, value):
+        self._step = value
+        if self._space is not None:
+            self._update_space()
 
-	def __getitem__(self, index):
-		if self._space is None:
-			self._update_space()
-		return self.space[index]
+    def __getitem__(self, index):
+        if self._space is None:
+            self._update_space()
+        return self.space[index]
 
 
 # Click Parameter: Float Range (Imitated by linspace).
 class Frange(click.ParamType):
-	""" click parameter type for float ranges. """
-	name = "Float Range"
+    """ click parameter type for float ranges. """
+    name = "Float Range"
 
-	def convert(self, value, param, ctx):
-		try:
-			params = [float(x) for x in str(value).split(",")]
-			start, stop, step = ([0.] if len(params) == 1 else []) + params + ([1.] if len(params) in [1, 2] else [])
-			return FloatRange(start, stop, step)
-		except ValueError:
-			self.fail(f'{value} cannot be evaluated as a float range.')
+    def convert(self, value, param, ctx):
+        try:
+            params = [float(x) for x in str(value).split(",")]
+            start, stop, step = ([0.] if len(params) == 1 else []) + params + ([1.] if len(params) in [1, 2] else [])
+            return FloatRange(start, stop, step)
+        except ValueError:
+            self.fail(f'{value} cannot be evaluated as a float range.')
 
 
 FRANGE = Frange()
@@ -107,34 +107,34 @@ FRANGE = Frange()
 @click.option('-d', '--data-dir', type=click.Path(), help='Input path for noisy dataset')
 @click.option('-w', '--weights', type=click.Path(), help='Path to stored saved weights', default='data/weights.pt')
 @click.option('-n', '--normalize-over', type=FRANGE, default=None,
-				help="Range of retained values to normalize over, by percentiles.")
+                help="Range of retained values to normalize over, by percentiles.")
 @click.option('-p', '--patch-size', type=click.INT, help="Size of image patches for analysis.", default=512)
 @click.option('-b', '--batch-size', type=click.INT, default=4, help='# of Images for CUDA to batch process at once.')
 @click.option('--cuda/--no-cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
 def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, cuda):
-	""" Applies ML methods to CT Data."""
-	if data_dir is None:
-		pass
-	elif Path(data_dir).exists():
-		log.start()
+    """ Applies ML methods to CT Data."""
+    if data_dir is None:
+        pass
+    elif Path(data_dir).exists():
+        log.start()
 
-		ctx.obj = CTDataset(data_dir, normalize_over, batch_size, patch_size, weights)
-		ctnetwork.use_cuda = torch.cuda.is_available() and cuda
+        ctx.obj = CTDataset(data_dir, normalize_over, batch_size, patch_size, weights)
+        ctnetwork.use_cuda = torch.cuda.is_available() and cuda
 
-		if ctnetwork.use_cuda:
-			log.log("Initialize", "Using GPU")
-		elif cuda:
-			log.log("Initialize", "CUDA GPU Skipped by Request.")
-		else:
-			log.log("Initialize", "CUDA GPU Unavailable.")
-	else:
-		log.log("Initialize", "Data Dir Does Not Exist", log.DEBUG.ERROR)
+        if ctnetwork.use_cuda:
+            log.log("Initialize", "Using GPU")
+        elif cuda:
+            log.log("Initialize", "CUDA GPU Unavailable", log_level=log.DEBUG.WARN)
+        else:
+            log.log("Initialize", "CUDA GPU Skipped by Request.", log_level=log.DEBUG.WARN)
+    else:
+        log.log("Initialize", "Data Dir Does Not Exist", log.DEBUG.ERROR)
 
 
 @ctml.command()
 # Data parameters
 @click.option('-v', '--valid-dir', type=click.Path(), default=None,
-				help='Path to validation folder for non-automatic validation specification.')
+                help='Path to validation folder for non-automatic validation specification.')
 @click.option('--ckpt-save-path', type=click.Path(), default='./data/ckpts', help='Checkpoint save path')
 @click.option('--ckpt-overwrite', type=click.BOOL, default=False, help='Overwrite intermediate model checkpoints')
 @click.option('--report-interval', type=click.INT, default=128, help='Batch report interval')
@@ -146,26 +146,26 @@ def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, cuda):
 @click.option('-l', '--loss', type=click.Choice(['l1', 'l2']), default='l2', help='Loss function')
 # Corruption parameters
 @click.option('-n', '--noise-type', type=click.Choice(['natural', 'poisson', 'text', 'mc']), default='natural',
-	help='Type of noise to target.')
+    help='Type of noise to target.')
 @click.pass_context
 def utraining(ctx, valid_dir, ckpt_save_path, ckpt_overwrite, report_interval, plot_stats,
-							learning_rate, adam, nb_epochs, loss, noise_type):
-	"""Trains an Unsupervised ML Denoiser based on Noise2Noise () """
+                            learning_rate, adam, nb_epochs, loss, noise_type):
+    """Trains an Unsupervised ML Denoiser based on Noise2Noise () """
 
-	# Load training and validation datasets
-	if valid_dir is None:
-		training_set = FileSet.TRAIN.load(ctx.obj, shuffle=True)
-		validation_set = FileSet.VALIDATE.load(ctx.obj, shuffle=False)
-	else:
-		training_set = FileSet.FULL.load(ctx.obj, shuffle=True)
-		validation_set = FileSet.FULL.load(
-			CTDataset(valid_dir, ctx.obj.normalize_over, ctx.obj.batch_size. ctx.obj.patch_size, ctx.obj.weights),
-			shuffle=False)
+    # Load training and validation datasets
+    if valid_dir is None:
+        training_set = FileSet.TRAIN.load(ctx.obj, shuffle=True)
+        validation_set = FileSet.VALIDATE.load(ctx.obj, shuffle=False)
+    else:
+        training_set = FileSet.FULL.load(ctx.obj, shuffle=True)
+        validation_set = FileSet.FULL.load(
+            CTDataset(valid_dir, ctx.obj.normalize_over, ctx.obj.batch_size. ctx.obj.patch_size, ctx.obj.weights),
+            shuffle=False)
 
-	# Initialize model and train
-	ctd = cttrainer.CTTrainer(loss, noise_type, learning_rate, adam, nb_epochs, ctnetwork.use_cuda, trainable=True)
-	ctd.train(training_set, validation_set, report_interval, plot_stats, ckpt_save_path, ckpt_overwrite)
-	torch.save(ctd.model.state_dict(), ctx.obj.weights)
+    # Initialize model and train
+    ctd = cttrainer.CTTrainer(loss, noise_type, learning_rate, adam, nb_epochs, ctnetwork.use_cuda, trainable=True)
+    ctd.train(training_set, validation_set, report_interval, plot_stats, ckpt_save_path, ckpt_overwrite)
+    torch.save(ctd.model.state_dict(), ctx.obj.weights)
 
 
 @ctml.command()
@@ -173,33 +173,33 @@ def utraining(ctx, valid_dir, ckpt_save_path, ckpt_overwrite, report_interval, p
 @click.option("--patch-overlap", type=click.FLOAT, help="Overlap between denoising patches", default=0.4)
 @click.pass_context
 def udenoise(ctx, output_dir, patch_overlap):
-	"""Applies an Unsupervised ML Denoiser based on Noise2Noise ()
+    """Applies an Unsupervised ML Denoiser based on Noise2Noise ()
 
-		Ignores parent batch-size parameter due to empatches limitations.
-		"""
+        Ignores parent batch-size parameter due to empatches limitations.
+        """
 
-	log.log("Initialize Denoise", f"Total Images to Denoise: {len(ctx.obj.inputs)}")
+    log.log("Initialize Denoise", f"Total Images to Denoise: {len(ctx.obj.inputs)}")
 
-	Path(output_dir).mkdir(exist_ok=True)
+    Path(output_dir).mkdir(exist_ok=True)
 
-	model = ctnetwork.UNet(in_channels=1)
+    model = ctnetwork.UNet(in_channels=1)
 
-	if ctnetwork.use_cuda:
-		model = model.cuda()
-		model.load_state_dict(torch.load(ctx.obj.weights))
-		model.eval()
+    if ctnetwork.use_cuda:
+        model = model.cuda()
+        model.load_state_dict(torch.load(ctx.obj.weights))
+        model.eval()
 
-	denoiser = ctdenoise.CTDenoiser(model, ctnetwork.use_cuda)
+    denoiser = ctdenoise.CTDenoiser(model, ctnetwork.use_cuda)
 
-	for image in ctx.obj.inputs:
-		log.log("Pass Start", f"Image {image.name}")
+    for image in ctx.obj.inputs:
+        log.log("Pass Start", f"Image {image.name}")
 
-		# Load image and create patches.  Normalizes if needed.
-		patches, ds = FileSet.PATCHES.load(ctx.obj, single=True, image=image, overlap=patch_overlap)
+        # Load image and create patches.  Normalizes if needed.
+        patches, ds = FileSet.PATCHES.load(ctx.obj, single=True, image=image, overlap=patch_overlap)
 
-		# Denoises patches and merges back into original image, returning merged image.
-		out_img = denoiser.denoise(patches, ds)
+        # Denoises patches and merges back into original image, returning merged image.
+        out_img = denoiser.denoise(patches, ds)
 
-		out_path = Path(output_dir, f"CL_{image.name}")
-		tf.imwrite(out_path, out_img)
-		log.log("Pass Complete", f"Image Saved To {out_path}")
+        out_path = Path(output_dir, f"CL_{image.name}")
+        tf.imwrite(out_path, out_img)
+        log.log("Pass Complete", f"Image Saved To {out_path}")
