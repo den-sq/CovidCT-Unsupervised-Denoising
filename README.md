@@ -11,7 +11,10 @@ Current functionality is limited to a denoising approach for reconstructed data 
 3. However, noise varies between the two slices. Patches from slice[i] were used as input and the corresponding slice[i+1] patch was used as target.
 4. Over iterated epochs, the unet learns the mean of the observations (true signal) and produces a clean image.
 	
-A pretrained weight set (trained on 9680x9680 sample, 100 epochs) is present at data/denoiser.pt.
+Two pretrained weight sets are available:  
+module/denoise_phase.pt  
+module/denoise_nophase.pt  
+Both samples were trained on a dataset of 4976 13568x13568 reconstruction slices.  The first was trained on a dataset with phase retrieval[1] applied, the second was not.
 
 #### Usage:
 python ctml --data-dir data/train --weights data/final.pt --cuda utraining --nb-epochs 100
@@ -51,3 +54,5 @@ python ctml udenoise --help
 	pip install -r requirements.txt
 
 	Note that pytorch is required but not listed in the requirements due to variance in CUDA version requirements.	
+
+[1] Paganin, David, et al. "Simultaneous phase and amplitude extraction from a single defocused image of a homogeneous object." Journal of microscopy 206.1 (2002): 33-40.
