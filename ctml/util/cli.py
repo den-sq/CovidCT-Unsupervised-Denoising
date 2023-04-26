@@ -1,3 +1,4 @@
+from multiprocessing import Pool
 from pathlib import Path
 
 import click
@@ -191,15 +192,19 @@ def udenoise(ctx, output_dir, patch_overlap):
 
     denoiser = ctdenoise.CTDenoiser(model, ctnetwork.use_cuda)
 
-    for image in ctx.obj.inputs:
+    for i, image in enumerate(ctx.obj.inputs):
+        out_path = Path(output_dir, f"CL_{image.name}")
+        if out_path.exists():
+            log.log("Output Exists", out_path, log_level=log.DEBUG.WARN)
+            continue
+    
         log.log("Pass Start", f"Image {image.name}")
-
         # Load image and create patches.  Normalizes if needed.
         patches, ds = FileSet.PATCHES.load(ctx.obj, single=True, image=image, overlap=patch_overlap)
 
         # Denoises patches and merges back into original image, returning merged image.
         out_img = denoiser.denoise(patches, ds)
 
-        out_path = Path(output_dir, f"CL_{image.name}")
+        
         tf.imwrite(out_path, out_img)
-        log.log("Pass Complete", f"Image Saved To {out_path}")
+        log.log("Pass Complete", f"Image {i + 1} of {len(ctx.obj.inputs)} Saved To {out_path}")
