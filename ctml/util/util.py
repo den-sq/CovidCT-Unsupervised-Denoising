@@ -1,6 +1,8 @@
 import numpy as np
 from ruamel.yaml import YAML, yaml_object
+import tifffile as tf
 
+from util.log import log
 
 yaml = YAML()
 
@@ -75,3 +77,21 @@ class FloatRange:
         if self._space is None:
             self._update_space()
         return self.space[index]
+
+
+def logged_read(image):
+    """ Helper function to read a tiff file and log it, for threading. """
+    img = tf.imread(image)
+    log("Image Read", image)
+    return img
+
+
+def logged_write(path, img):
+    """ Helper function to write a tiff file and log it, for threading.  """
+    tf.imwrite(path, img)
+    log("Image Write", path.name)
+
+
+def thread_stub():
+    """ Helper function to just return None, for threading. """
+    return None

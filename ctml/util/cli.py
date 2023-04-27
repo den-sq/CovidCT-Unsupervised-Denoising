@@ -1,5 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Thread
 
 import click
 import tifffile as tf
@@ -8,7 +8,7 @@ import torch
 from unsup import ctnetwork, ctdenoise, cttrainer
 from util import log
 from util.ctdataset import CTDataset, FileSet
-from util.util import FloatRange
+from util.util import FloatRange, logged_write, thread_stub
 
 
 # Click Parameter: Float Range (Imitated by linspace).
@@ -45,6 +45,8 @@ def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, cuda):
         log.start()
 
         ctx.obj = CTDataset(data_dir, normalize_over, batch_size, patch_size, weights)
+        log.log("Initialize", f"{data_dir}")
+
         ctnetwork.use_cuda = torch.cuda.is_available() and cuda
 
         if ctnetwork.use_cuda:
@@ -107,6 +109,7 @@ def udenoise(ctx, output_dir, patch_overlap):
     log.log("Initialize Denoise", f"Total Images to Denoise: {len(ctx.obj.inputs)}")
 
     Path(output_dir).mkdir(exist_ok=True)
+    log.log("Out Dir Created", output_dir)
 
     model = ctnetwork.UNet(in_channels=1)
 
@@ -117,25 +120,31 @@ def udenoise(ctx, output_dir, patch_overlap):
 
     denoiser = ctdenoise.CTDenoiser(model, ctnetwork.use_cuda)
 
-    # Thread Objects
-    writer = Thread(); writer.start() 	# noqa: E702
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        # Thread Objects, pre-assigned as result() is called before first submit.
+        # Don't preload first image because it may be skipped.
+        writer = pool.submit(thread_stub)
+        reader = pool.submit(thread_stub)
 
-    for i, image in enumerate(ctx.obj.inputs):
-        out_path = Path(output_dir, f"CL_{image.name}")
-        if out_path.exists():
-            log.log("Output Exists", out_path, log_level=log.DEBUG.WARN)
-            continue
+        for i, image in enumerate(ctx.obj.inputs):
+            out_path = Path(output_dir, f"CL_{image.name}")
+            if out_path.exists():
+                log.log("Output Exists", out_path.name, log_level=log.DEBUG.WARN)
+                continue
 
-        log.log("Pass Start", f"Image {image.name}")
-        # Load image and create patches.  Normalizes if needed.
-        patches, ds = FileSet.PATCHES.load(ctx.obj, single=True, image=image, overlap=patch_overlap)
+            log.log("Pass Start", f"Image {image.name}")
 
-        # Make sure previous is written before overwriting.
-        writer.join()
+            # Load image and create patches.  Normalizes if needed.
+            preload = reader.result()
+            patches, ds = FileSet.PATCHES.load(ctx.obj,
+                            single=True, image=image, overlap=patch_overlap, preload=preload)
+            reader = pool.submit(tf.imread, ctx.obj.inputs[i + 1])
 
-        # Denoises patches and merges back into original image, returning merged image.
-        out_img = denoiser.denoise(patches, ds)
+            # Make sure previous is written before overwriting.
+            writer.result()
 
-        writer = Thread(target=tf.imwrite, args=(out_path, out_img))
-        writer.start()
-        log.log("Pass Complete", f"Image {i + 1} of {len(ctx.obj.inputs)} Saving {out_path}")
+            # Denoises patches and merges back into original image, returning merged image.
+            out_img = denoiser.denoise(patches, ds)
+
+            writer = pool.submit(logged_write, out_path, out_img)
+            log.log("Pass Complete", f"Image {i + 1} of {len(ctx.obj.inputs)}")

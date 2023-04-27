@@ -84,16 +84,20 @@ class CTDataset(Dataset):
 
 
 class CTDenoisingSet(CTDataset):
-    def __init__(self, image, normalize_over, batch_size, patch_size, patch_overlap, weights):
+    def __init__(self, image, normalize_over, batch_size, patch_size, patch_overlap, weights, preload):
         super().__init__(".", normalize_over, batch_size, patch_size, weights)
         self._get_tiff_detail(image)
-        self.__img = tf.imread(image)
-        log.log("Image Load", f"{image}")
+        if preload is None:
+            self.__img = tf.imread(image)
+            log.log("Image Load", f"{image.name}")
+        else:
+            self.__img = np.copy(preload)
+            log.log("Image Preloaded", f"{image.name}")
 
         # Generate Patches of Normalized Data
         if normalize_over is not None:
             self.__img = self._norma(self.__img, normalize_over.start, normalize_over.stop)
-        log.log("Image Normalization", f"{normalize_over}")
+            log.log("Image Normalization", f"{normalize_over}")
 
         self.inputs, self.__indices = emp.extract_patches(self.__img, patchsize=patch_size, overlap=patch_overlap)
         log.log("Patch Creation", f"Patches Created ({len(self.indices)})")
@@ -111,14 +115,15 @@ class CTDenoisingSet(CTDataset):
         return self.__indices
 
     @staticmethod
-    def extract(ds: CTDataset, image, patch_overlap: float):
+    def extract(ds: CTDataset, image, patch_overlap: float, preload=None):
         """ Extracts a denoising dataset consisting of patches of an existing image.
 
             :param ds: Dataset image is from.
             :param image: Image to extract a patch set from.
             :param patch_overlap: Overlap value between patches.
+            :param preload: Preloaded image file.
         """
-        return CTDenoisingSet(image, ds.normalize_over, ds.batch_size, ds.patch_size, patch_overlap, ds.weights)
+        return CTDenoisingSet(image, ds.normalize_over, ds.batch_size, ds.patch_size, patch_overlap, ds.weights, preload)
 
 
 class CTTrainingSet(CTDataset):
@@ -163,14 +168,14 @@ class FileSet(Enum):
     FULL = 2,
     PATCHES = 3
 
-    def load(self, ds: Dataset, image=None, overlap=False, single=False, shuffle=False):
+    def load(self, ds: Dataset, image=None, overlap=False, single=False, shuffle=False, preload=None):
         """ Loads a given dataset into a dataloader based on what kind of FileSet this is.
 
             :param ds: Dataset to load.
         """
         batch_size = 1 if single else ds.batch_size
         if self == FileSet.PATCHES:
-            ds_two = CTDenoisingSet.extract(ds, image, overlap)
+            ds_two = CTDenoisingSet.extract(ds, image, overlap, preload)
             return DataLoader(ds_two, batch_size=batch_size, shuffle=shuffle), ds_two
         else:
             dup = CTTrainingSet.dup(ds)
