@@ -1,5 +1,5 @@
-from multiprocessing import Pool
 from pathlib import Path
+from threading import Thread
 
 import click
 import tifffile as tf
@@ -117,19 +117,25 @@ def udenoise(ctx, output_dir, patch_overlap):
 
     denoiser = ctdenoise.CTDenoiser(model, ctnetwork.use_cuda)
 
+    # Thread Objects
+    writer = Thread(); writer.start() 	# noqa: E702
+
     for i, image in enumerate(ctx.obj.inputs):
         out_path = Path(output_dir, f"CL_{image.name}")
         if out_path.exists():
             log.log("Output Exists", out_path, log_level=log.DEBUG.WARN)
             continue
-    
+
         log.log("Pass Start", f"Image {image.name}")
         # Load image and create patches.  Normalizes if needed.
         patches, ds = FileSet.PATCHES.load(ctx.obj, single=True, image=image, overlap=patch_overlap)
 
+        # Make sure previous is written before overwriting.
+        writer.join()
+
         # Denoises patches and merges back into original image, returning merged image.
         out_img = denoiser.denoise(patches, ds)
 
-        
-        tf.imwrite(out_path, out_img)
-        log.log("Pass Complete", f"Image {i + 1} of {len(ctx.obj.inputs)} Saved To {out_path}")
+        writer = Thread(target=tf.imwrite, args=(out_path, out_img))
+        writer.start()
+        log.log("Pass Complete", f"Image {i + 1} of {len(ctx.obj.inputs)} Saving {out_path}")
