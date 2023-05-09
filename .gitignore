@@ -132,6 +132,10 @@ dmypy.json
 .pyre/
 
 # result data
-data/**/*.tif
-data/train/*
-data/ckpts/*
+data/*
+
+# log data
+log/*
+
+# batches run remotely
+batch/*
