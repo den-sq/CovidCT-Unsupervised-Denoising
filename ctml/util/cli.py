@@ -36,8 +36,9 @@ FRANGE = Frange()
                 help="Range of retained values to normalize over, by percentiles.")
 @click.option('-p', '--patch-size', type=click.INT, help="Size of image patches for analysis.", default=512)
 @click.option('-b', '--batch-size', type=click.INT, default=4, help='# of Images for CUDA to batch process at once.')
+@click.option('-o', '--nodes', type=click.INT, default=1, help='# of GPU Nodes')
 @click.option('--cuda/--no-cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
-def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, cuda):
+def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, nodes, cuda):
     """ Applies ML methods to CT Data."""
     if data_dir is None:
         pass
@@ -51,6 +52,9 @@ def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, cuda):
 
         if ctnetwork.use_cuda:
             log.log("Initialize", "Using GPU")
+            ctnetwork.nodes = min(nodes, torch.cuda.device_count())
+            if ctnetwork.nodes < nodes:
+                log.log("Initialize", f"Only {ctnetwork.nodes} GPUs available, cannot use {nodes} nodes.")
         elif cuda:
             log.log("Initialize", "CUDA GPU Unavailable", log_level=log.DEBUG.WARN)
         else:
@@ -117,6 +121,8 @@ def udenoise(ctx, output_dir, patch_overlap):
         model = model.cuda()
         model.load_state_dict(torch.load(ctx.obj.weights))
         model.eval()
+        if ctnetwork.nodes > 1:
+            model = torch.nn.DataParallel(model)
 
     denoiser = ctdenoise.CTDenoiser(model, ctnetwork.use_cuda)
 
