@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.optim import Adam, lr_scheduler
 
 from util import log
-from unsup.ctnetwork import UNet
+from unsup.ctnetwork import UNet, nodes
 
 
 class CTTrainer(object):
@@ -49,6 +49,8 @@ class CTTrainer(object):
         # CUDA support
         if self._use_cuda:
             self.model = self.model.cuda()
+            if nodes > 1:
+                self.model = torch.nn.DataParallel(self.model)
 
     def save_model(self, epoch, validation_loss, ckpt_dir, ckpt_overwrite, first=False):
         """Saves model to files; can be overwritten at every epoch to save disk space."""
