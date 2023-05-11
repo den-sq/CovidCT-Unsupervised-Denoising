@@ -88,10 +88,10 @@ class CTDenoisingSet(CTDataset):
         super().__init__(".", normalize_over, batch_size, patch_size, weights)
         self._get_tiff_detail(image)
         if preload is None:
-            self.__img = tf.imread(image)
+            self.__img = tf.imread(image).astype(np.float32)
             log.log("Image Load", f"{image.name}")
         else:
-            self.__img = np.copy(preload)
+            self.__img = preload.astype(np.float32)
             log.log("Image Preloaded", f"{image.name}")
 
         # Generate Patches of Normalized Data

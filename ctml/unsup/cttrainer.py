@@ -127,8 +127,8 @@ class CTTrainer(object):
                     disp=lambda x: '' if not len(loss_list) else f'Loss {loss_list[-1]}') as train_bar:
                 for source, target in train_bar:
                     if self._use_cuda:
-                        source = source.cuda()
-                        target = target.cuda()
+                        source = source.cuda().type(torch.float)
+                        target = target.cuda().type(torch.float)
 
                     loss = self.loss(self.model(source), target)
                     loss_list.append(loss.item())
