@@ -37,7 +37,7 @@ FRANGE = Frange()
 @click.option('-p', '--patch-size', type=click.INT, help="Size of image patches for analysis.", default=512)
 @click.option('-b', '--batch-size', type=click.INT, default=4, help='# of Images for CUDA to batch process at once.')
 @click.option('-o', '--nodes', type=click.INT, default=1, help='# of GPU Nodes')
-@click.option("-c", "--circ_mask_ratio", type=click.FLOAT, default=None, help="Relative width of circular mask to apply, if any.")
+@click.option("-c", "--circ-mask-ratio", type=click.FLOAT, default=None, help="Relative width of circular mask to apply, if any.")
 @click.option('--cuda/--no-cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
 def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, nodes, circ_mask_ratio, cuda):
 	""" Applies ML methods to CT Data."""
