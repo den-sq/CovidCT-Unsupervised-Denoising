@@ -37,15 +37,17 @@ FRANGE = Frange()
 @click.option('-p', '--patch-size', type=click.INT, help="Size of image patches for analysis.", default=512)
 @click.option('-b', '--batch-size', type=click.INT, default=4, help='# of Images for CUDA to batch process at once.')
 @click.option('-o', '--nodes', type=click.INT, default=1, help='# of GPU Nodes')
+@click.option("-c", "--circ_mask_ratio", type=click.FLOAT, default=None, help="Relative width of circular mask to apply, if any.")
 @click.option('--cuda/--no-cuda', type=click.BOOL, help='Whether to use CUDA', default=False)
-def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, nodes, cuda):
+def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, nodes, circ_mask_ratio, cuda):
     """ Applies ML methods to CT Data."""
     if data_dir is None:
         pass
     elif Path(data_dir).exists():
         log.start()
 
-        ctx.obj = CTDataset(data_dir, normalize_over, batch_size, patch_size, weights)
+        ctx.obj = CTDataset(data_dir, circ_mask_ratio, batch_size, patch_size, weights)
+        ctx.obj.norm_setup(normalize_over)
         log.log("Initialize", f"{data_dir}")
 
         ctnetwork.use_cuda = torch.cuda.is_available() and cuda
@@ -90,9 +92,9 @@ def utraining(ctx, valid_dir, ckpt_save_path, ckpt_overwrite, report_interval, p
         validation_set = FileSet.VALIDATE.load(ctx.obj, shuffle=False)
     else:
         training_set = FileSet.FULL.load(ctx.obj, shuffle=True)
-        validation_set = FileSet.FULL.load(
-            CTDataset(valid_dir, ctx.obj.normalize_over, ctx.obj.batch_size. ctx.obj.patch_size, ctx.obj.weights),
-            shuffle=False)
+        valid_set = CTDataset(valid_dir, ctx.obj.batch_size. ctx.obj.patch_size, ctx.obj.weights)
+        valid_set.set_range(ctx.obj.floor, ctx.obj.ceiling)
+        validation_set = FileSet.FULL.load(valid_set, shuffle=False)
 
     # Initialize model and train
     ctd = cttrainer.CTTrainer(loss, noise_type, learning_rate, adam, nb_epochs, ctnetwork.use_cuda, trainable=True)
