@@ -53,7 +53,7 @@ class CTDataset(Dataset):
 
 	def norm_setup(self, normalize_over):
 		if self.__circ_mask_ratio:
-			self.__normalize_over = FloatRange(normalize_over.start + 100 * (1.0 - np.pi * ((self.circ_mask_ratio / 2) ** 2)),
+			self.__normalize_over = FloatRange(normalize_over.start + 100 * (1.0 - np.pi * ((self.__circ_mask_ratio / 2) ** 2)),
 								normalize_over.start, normalize_over.step)
 		else:
 			self.__normalize_over = normalize_over
