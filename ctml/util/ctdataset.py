@@ -1,16 +1,22 @@
 from collections import namedtuple
 from enum import Enum
+from multiprocessing.pool import ThreadPool
+import os
 from pathlib import Path
 import random
 
 from empatches import EMPatches
 from natsort import natsorted
+import numexpr as ne
 import numpy as np
+from psutil import cpu_count
 import tifffile as tf
+from tomopy import circ_mask
 from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms
 
 from util import log
+from util.util import FloatRange
 
 emp = EMPatches()
 
@@ -18,171 +24,250 @@ coord = namedtuple("coord", ["x", "y"])
 
 
 class CTDataset(Dataset):
-    def __init__(self, root_dir, normalize_over, batch_size, patch_size, weights):
-        super().__init__()
-        self.imgs = []
-        self.root_dir = Path(root_dir)
-        self.normalize_over = normalize_over
-        self.__patch_size = patch_size
-        self.__weights = weights
-        self.__batch_size = batch_size
-        self.trans = transforms.Compose([transforms.ToTensor()])
+	def __init__(self, root_dir, batch_size, patch_size, weights):
+		super().__init__()
+		self.imgs = []
+		self.root_dir = Path(root_dir)
 
-        if self.root_dir.exists():
-            self.inputs = natsorted(self.root_dir.iterdir())
-            log.log("Creating Dataset", len(self.inputs))
+		self.__patch_size = patch_size
+		self.__weights = weights
+		self.__batch_size = batch_size
+		self.__floor = None
+		self.__ceiling = None
+		self.trans = transforms.Compose([transforms.ToTensor()])
 
-    def _get_tiff_detail(self, img):
-        with tf.TiffFile(img) as tif:
-            page = tif.pages[0]
-            self._idim = coord(*page.shape)
-            self._dtype = page.dtype
-            self._bytesize = page.dtype.itemsize
-            self._offset = page.dataoffsets[0]
+		if self.root_dir.exists():
+			self.inputs = natsorted(self.root_dir.iterdir())
+			log.log("Creating Dataset", len(self.inputs))
 
-    def _norma(self, img, bottom_threshold, top_threshold):
-        """ Basic image normalization steps. """
-        floor = np.percentile(img, bottom_threshold)
-        ceiling = np.percentile(img, top_threshold)
+	def _get_tiff_detail(self, img):
+		with tf.TiffFile(img) as tif:
+			page = tif.pages[0]
+			self._idim = coord(*page.shape)
+			self._dtype = page.dtype
+			self._bytesize = page.dtype.itemsize
+			self._offset = page.dataoffsets[0]
 
-        if floor == ceiling:
-            # log.log("Normalization", f"{floor}:{ceiling}:{np.max(img)}:{np.min(img)}", log_level=log.DEBUG.WARN)
-            ceiling = np.max(img)
-            floor = np.min(img)
-            if ceiling == floor: ceiling += 0.001 	# noqa: E701
+	# ONLY USE WITH THREADS NOT PROCESSES TAKES IMAGE FILE
+	def _mem_read(self, image, i, path):
+		image[i] = tf.imread(path)
 
-        normalized = img - floor
-        normalized[normalized < 0] = 0
+	def norm_setup(self, normalize_over, circ_mask_ratio):
+		self.__circ_mask_ratio = circ_mask_ratio
 
-        return normalized / (ceiling - floor)
+		processes = cpu_count()
+		os.environ["NUMEXPR_MAX_THREADS"] = f"{processes}"
+		ne.set_num_threads(processes)
 
-    @property
-    def patch_size(self):
-        """ Size of patches within an image to use for ML analysis. """
-        return self.__patch_size
 
-    @property
-    def weights(self):
-        """ Location of ML saved weights. """
-        return self.__weights
+		if self.__circ_mask_ratio:
+			self.__normalize_over = FloatRange(normalize_over.start + 100 * (1.0 - np.pi * ((self.__circ_mask_ratio / 2) ** 2)),
+								normalize_over.stop, normalize_over.step)
+		else:
+			self.__normalize_over = normalize_over
 
-    @property
-    def batch_size(self):
-        """ # of patches sent to GPU at once for multiprocessing. """
-        return self.__batch_size
+		log.log("Normalization range", f"{self.__normalize_over} from {normalize_over}")
 
-    def __len__(self):
-        return len(self.inputs)
+		self._get_tiff_detail(self.inputs[0])
 
-    def __getitem__(self, index):
-        return self.trans(self.inputs[index])
+		normalize_interval = int(np.ceil(len(self.inputs) / cpu_count()))
 
-    @staticmethod
-    def dup(ds):
-        """ Returns a CTDataset duplicate of passed in dataset. """
-        return CTDataset(ds.root_dir, ds.normalize_over, ds.batch_size, ds.patch_size, ds.weights)
+		# Normalization calculation
+		image_count = len(self.inputs) // normalize_interval
+		log.log("Image Load", f"{len(self.inputs)}:{normalize_interval}:{processes}:{len(self.inputs) // normalize_interval}")
+
+		image = np.empty((cpu_count(),) + self._idim)
+
+		with ThreadPool(processes) as pool:
+			pool.starmap(self._mem_read, [(image, i, self.inputs[j]) for i, j in enumerate(range(0, len(self.inputs), normalize_interval))])
+		
+		log.log("Image Load",
+			f"{len(range(0, len(self.inputs), len(self.inputs) // normalize_interval))}|{normalize_interval}"
+			" Images Loaded For Normalization")
+
+		os.environ["NUMEXPR_MAX_THREADS"] = f"{processes}"
+		ne.set_num_threads(processes)
+
+		if self.__circ_mask_ratio:
+			circ_mask(image, axis=0, ratio=self.__circ_mask_ratio, val=np.min(image[0:image_count]))
+			log.log("Image Masking", f"Images Masked at {self.__circ_mask_ratio}")
+
+		self.__floor = np.percentile(image, self.__normalize_over.start)
+		log.log("Floor Calculation", self.__floor)
+		self.__ceiling = np.percentile(image, self.__normalize_over.stop)
+		log.log("Ceiling Calculation", self.__ceiling)
+		if self.__floor == self.__ceiling:
+			self.__ceiling += 0.001
+
+	def _norma(self, img):
+		""" Basic image normalization steps. """
+		normalized = img - self.__floor
+		normalized[normalized < 0] = 0
+
+		return normalized / (self.__ceiling - self.__floor)
+
+	@property
+	def patch_size(self):
+		""" Size of patches within an image to use for ML analysis. """
+		return self.__patch_size
+
+	@property
+	def weights(self):
+		""" Location of ML saved weights. """
+		return self.__weights
+
+	@property
+	def batch_size(self):
+		""" # of patches sent to GPU at once for multiprocessing. """
+		return self.__batch_size
+	
+	@property
+	def floor(self):
+		return self.__floor
+	
+	@property
+	def ceiling(self):
+		return self.__ceiling
+
+	@property
+	def circ_mask_ratio(self):
+		return self.__circ_mask_ratio
+	
+	def set_range(self, floor, ceiling, circ_mask_ratio):
+		self.__floor = floor
+		self.__ceiling = ceiling
+		self.__circ_mask_ratio = circ_mask_ratio
+
+	def __len__(self):
+		return len(self.inputs)
+
+	def __getitem__(self, index):
+		return self.trans(self.inputs[index])
+
+	@staticmethod
+	def dup(ds):
+		""" Returns a CTDataset duplicate of passed in dataset. """
+		temp = CTDataset(ds.root_dir, ds.normalize_over, ds.batch_size, ds.patch_size, ds.weights)
+		temp.setrange(ds.floor, ds.ceiling, ds.circ_mask_ratio)
+		return temp
 
 
 class CTDenoisingSet(CTDataset):
-    def __init__(self, image, normalize_over, batch_size, patch_size, patch_overlap, weights, preload):
-        super().__init__(".", normalize_over, batch_size, patch_size, weights)
-        self._get_tiff_detail(image)
-        if preload is None:
-            self.__img = tf.imread(image).astype(np.float32)
-            log.log("Image Load", f"{image.name}")
-        else:
-            self.__img = preload.astype(np.float32)
-            log.log("Image Preloaded", f"{image.name}")
+	def __init__(self, image, floor, ceiling, circ_mask_ratio, batch_size, patch_size, patch_overlap, weights, preload):
+		super().__init__(".", batch_size, patch_size, weights)
+		self.set_range(floor, ceiling, circ_mask_ratio)
+		self._get_tiff_detail(image)
+		if preload is None:
+			self.__img = tf.imread(image).astype(np.float32)
+			log.log("Image Load", f"{image.name}")
+		else:
+			self.__img = preload.astype(np.float32)
+			log.log("Image Preloaded", f"{image.name}")
 
-        # Generate Patches of Normalized Data
-        if normalize_over is not None:
-            self.__img = self._norma(self.__img, normalize_over.start, normalize_over.stop)
-            log.log("Image Normalization", f"{normalize_over}")
+		# Generate Patches of Normalized Data
+		if self.circ_mask_ratio:
+			self.__img = self.__img.reshape((1,) + self.img.shape)
+			circ_mask(self.__img, axis=0, ratio=self.circ_mask_ratio, val=np.min(self.__img))
+			self.__img = self.__img.reshape(self.img.shape[1:])
 
-        self.inputs, self.__indices = emp.extract_patches(self.__img, patchsize=patch_size, overlap=patch_overlap)
-        log.log("Patch Creation", f"Patches Created ({len(self.indices)})")
+		if floor is not None and ceiling is not None:
+			self.__img = self._norma(self.__img)
+			log.log("Image Normalization", f"{floor} to {ceiling}")
 
-    @property
-    def img(self):
-        return self.__img
+		self.inputs, self.__indices = emp.extract_patches(self.__img, patchsize=patch_size, overlap=patch_overlap)
+		log.log("Patch Creation", f"Patches Created ({len(self.indices)})")
 
-    @property
-    def trim_index(self):
-        return self.__trim_index
+	@property
+	def img(self):
+		return self.__img
 
-    @property
-    def indices(self):
-        return self.__indices
+	@property
+	def trim_index(self):
+		return self.__trim_index
 
-    @staticmethod
-    def extract(ds: CTDataset, image, patch_overlap: float, preload=None):
-        """ Extracts a denoising dataset consisting of patches of an existing image.
+	@property
+	def indices(self):
+		return self.__indices
 
-            :param ds: Dataset image is from.
-            :param image: Image to extract a patch set from.
-            :param patch_overlap: Overlap value between patches.
-            :param preload: Preloaded image file.
-        """
-        return CTDenoisingSet(image, ds.normalize_over, ds.batch_size, ds.patch_size, patch_overlap, ds.weights, preload)
+	@staticmethod
+	def extract(ds: CTDataset, image, patch_overlap: float, preload=None):
+		""" Extracts a denoising dataset consisting of patches of an existing image.
+
+			:param ds: Dataset image is from.
+			:param image: Image to extract a patch set from.
+			:param patch_overlap: Overlap value between patches.
+			:param preload: Preloaded image file.
+		"""
+		return CTDenoisingSet(image, ds.floor, ds.ceiling, ds.circ_mask_ratio, ds.batch_size, ds.patch_size, patch_overlap, ds.weights, preload)
 
 
 class CTTrainingSet(CTDataset):
-    def __init__(self, root_dir, normalize_over, batch_size, patch_size, weights):
-        super().__init__(root_dir, normalize_over, batch_size, patch_size, weights)
-        self._get_tiff_detail(self.inputs[0])
-        self.targets = self.inputs[1:] + [self.inputs[-2]]
+	def __init__(self, root_dir, floor, ceiling, circ_mask_ratio, batch_size, patch_size, weights):
+		super().__init__(root_dir, batch_size, patch_size, weights)
+		self.set_range(floor, ceiling, circ_mask_ratio)
+		self._get_tiff_detail(self.inputs[0])
+		self.targets = self.inputs[1:] + [self.inputs[-2]]
 
-    def _random_crop(self):
-        pos = coord(random.randint(0, self._idim.x - (self.patch_size + 4)),
-                    random.randint(0, self._idim.y - (self.patch_size + 4)))
-        return np.s_[pos.x:pos.x + self.patch_size, pos.y:pos.y + self.patch_size]
+	def _random_crop(self):
+		# limit random area selection to rectangle in interior of circle mask.
+		cm_sq = (self.circ_mask_ratio / 2) ** 2
+		side = (1.0 - np.sqrt(cm_sq * 2)) / 2
 
-    def __getitem__(self, index):
-        """Creates and returns GPU-located crops of the source and target images for the index.
+		pos = coord(random.randint(int(self._idim.x * side), 
+					int(self._idim.x * (1 - side)) - (self.patch_size + 4)),
+				random.randint(int(self._idim.y * side), 
+					int(self._idim.y * (1 - side)) - (self.patch_size + 4)))
+		return np.s_[pos.x:pos.x + self.patch_size, pos.y:pos.y + self.patch_size]
 
-            Returned images are cropped and normalized according to the dataset's batch size
-            and normalization parameters.
-        """
+	def __getitem__(self, index):
+		"""Creates and returns GPU-located crops of the source and target images for the index.
 
-        # Load images
-        crop = self._random_crop()
-        inpimg = np.memmap(self.inputs[index], self._dtype, 'r', self._offset, self._idim)[crop]
-        tarimg = np.memmap(self.targets[index], self._dtype, 'r', self._offset, self._idim)[crop]
+			Returned images are cropped and normalized according to the dataset's batch size
+			and normalization parameters.
+		"""
 
-        if self.normalize_over is not None:
-            return (self.trans(self._norma(inpimg, self.normalize_over.start, self.normalize_over.stop)),
-                    self.trans(self._norma(tarimg, self.normalize_over.start, self.normalize_over.stop)))
-        else:
-            return self.trans(inpimg), self.trans(tarimg)
+		# Load images
+		crop =  self._random_crop()
+		inpimg = np.memmap(self.inputs[index], self._dtype, 'r', self._offset, self._idim)[crop]
+		tarimg = np.memmap(self.targets[index], self._dtype, 'r', self._offset, self._idim)[crop]
+		# if self.circ_mask_ratio:
+		#	circ_mask(inpimg, axis=0, ratio=self.circ_mask_ratio, val=np.min(inpimg))
+		#	circ_mask(tarimg, axis=0, ratio=self.circ_mask_ratio, val=np.min(tarimg))
+		#	log.log("Image Masking", f"Images Masked at {self.circ_mask_ratio}")
 
-    @staticmethod
-    def dup(ds):
-        """ Creates a CTTrainingSet duplicate of a CTDataset. """
-        return CTTrainingSet(ds.root_dir, ds.normalize_over, ds.batch_size, ds.patch_size, ds.weights)
+		if self.floor is not None and self.ceiling is not None:
+			return (self.trans(self._norma(inpimg)), self.trans(self._norma(tarimg)))
+		else:
+			return self.trans(inpimg), self.trans(tarimg)
+
+	@staticmethod
+	def dup(ds):
+		""" Creates a CTTrainingSet duplicate of a CTDataset. """
+		return CTTrainingSet(ds.root_dir, ds.floor, ds.ceiling, ds.circ_mask_ratio, ds.batch_size, ds.patch_size, ds.weights)
 
 
 class FileSet(Enum):
-    """ Enum handling different kinds of file loads from a DataSet. """
-    TRAIN = 0,
-    VALIDATE = 1,
-    FULL = 2,
-    PATCHES = 3
+	""" Enum handling different kinds of file loads from a DataSet. """
+	TRAIN = 0,
+	VALIDATE = 1,
+	FULL = 2,
+	PATCHES = 3
 
-    def load(self, ds: Dataset, image=None, overlap=False, single=False, shuffle=False, preload=None):
-        """ Loads a given dataset into a dataloader based on what kind of FileSet this is.
+	def load(self, ds: Dataset, image=None, overlap=False, single=False, shuffle=False, preload=None):
+		""" Loads a given dataset into a dataloader based on what kind of FileSet this is.
 
-            :param ds: Dataset to load.
-        """
-        batch_size = 1 if single else ds.batch_size
-        if self == FileSet.PATCHES:
-            ds_two = CTDenoisingSet.extract(ds, image, overlap, preload)
-            return DataLoader(ds_two, batch_size=batch_size, shuffle=shuffle), ds_two
-        else:
-            dup = CTTrainingSet.dup(ds)
-            train_stop = max(int(len(dup) * 0.75), len(dup) - 128)
-            if self == FileSet.TRAIN:
-                return DataLoader(Subset(dup, range(0, train_stop)), batch_size=batch_size, shuffle=shuffle)
-            elif self == FileSet.VALIDATE:
-                return DataLoader(Subset(dup, range(train_stop, len(ds))), batch_size=batch_size, shuffle=shuffle)
-            elif self == FileSet.FULL:
-                return DataLoader(dup, batch_size=batch_size, shuffle=shuffle)
+			:param ds: Dataset to load.
+		"""
+		batch_size = 1 if single else ds.batch_size
+		if self == FileSet.PATCHES:
+			ds_two = CTDenoisingSet.extract(ds, image, overlap, preload)
+			return DataLoader(ds_two, batch_size=batch_size, shuffle=shuffle), ds_two
+		else:
+			dup = CTTrainingSet.dup(ds)
+			train_stop = max(int(len(dup) * 0.75), len(dup) - 128)
+			if self == FileSet.TRAIN:
+				return DataLoader(Subset(dup, range(0, train_stop)), batch_size=batch_size, shuffle=shuffle)
+			elif self == FileSet.VALIDATE:
+				return DataLoader(Subset(dup, range(train_stop, len(ds))), batch_size=batch_size, shuffle=shuffle)
+			elif self == FileSet.FULL:
+				return DataLoader(dup, batch_size=batch_size, shuffle=shuffle)
