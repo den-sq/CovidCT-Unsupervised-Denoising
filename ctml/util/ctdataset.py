@@ -1,11 +1,13 @@
 from collections import namedtuple
 from enum import Enum
 from multiprocessing.pool import ThreadPool
+import os
 from pathlib import Path
 import random
 
 from empatches import EMPatches
 from natsort import natsorted
+import numexpr as ne
 import numpy as np
 from psutil import cpu_count
 import tifffile as tf
@@ -53,15 +55,21 @@ class CTDataset(Dataset):
 	def norm_setup(self, normalize_over, circ_mask_ratio):
 		self.__circ_mask_ratio = circ_mask_ratio
 
+		processes = cpu_count()
+		os.environ["NUMEXPR_MAX_THREADS"] = f"{processes}"
+		ne.set_num_threads(processes)
+
+
 		if self.__circ_mask_ratio:
 			self.__normalize_over = FloatRange(normalize_over.start + 100 * (1.0 - np.pi * ((self.__circ_mask_ratio / 2) ** 2)),
 								normalize_over.stop, normalize_over.step)
 		else:
 			self.__normalize_over = normalize_over
 
+		log.log("Normalization range", f"{self.__normalize_over} from {normalize_over}")
+
 		self._get_tiff_detail(self.inputs[0])
 
-		processes = cpu_count()
 		normalize_interval = int(np.ceil(len(self.inputs) / cpu_count()))
 
 		# Normalization calculation
@@ -76,6 +84,9 @@ class CTDataset(Dataset):
 		log.log("Image Load",
 			f"{len(range(0, len(self.inputs), len(self.inputs) // normalize_interval))}|{normalize_interval}"
 			" Images Loaded For Normalization")
+
+		os.environ["NUMEXPR_MAX_THREADS"] = f"{processes}"
+		ne.set_num_threads(processes)
 
 		if self.__circ_mask_ratio:
 			circ_mask(image, axis=0, ratio=self.__circ_mask_ratio, val=np.min(image[0:image_count]))
@@ -198,11 +209,14 @@ class CTTrainingSet(CTDataset):
 		self.targets = self.inputs[1:] + [self.inputs[-2]]
 
 	def _random_crop(self):
-		# Imperfectly limity random area selection to interior of circle mask.
-		pos = coord(random.randint(int(self._idim.x * (1 - self.circ_mask_ratio)), 
-					int(self._idim.x * self.circ_mask_ratio) - (self.patch_size + 4)),
-				random.randint(int(self._idim.y * (1 - self.circ_mask_ratio)), 
-					int(self._idim.y * self.circ_mask_ratio) - (self.patch_size + 4)))
+		# limit random area selection to rectangle in interior of circle mask.
+		cm_sq = (self.circ_mask_ratio / 2) ** 2
+		side = (1.0 - np.sqrt(cm_sq * 2)) / 2
+
+		pos = coord(random.randint(int(self._idim.x * side), 
+					int(self._idim.x * (1 - side)) - (self.patch_size + 4)),
+				random.randint(int(self._idim.y * side), 
+					int(self._idim.y * (1 - side)) - (self.patch_size + 4)))
 		return np.s_[pos.x:pos.x + self.patch_size, pos.y:pos.y + self.patch_size]
 
 	def __getitem__(self, index):
