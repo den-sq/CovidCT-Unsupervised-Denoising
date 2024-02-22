@@ -46,8 +46,8 @@ def ctml(ctx, data_dir, normalize_over, batch_size, patch_size, weights, nodes, 
 	elif Path(data_dir).exists():
 		log.start()
 
-		ctx.obj = CTDataset(data_dir, circ_mask_ratio, batch_size, patch_size, weights)
-		ctx.obj.norm_setup(normalize_over)
+		ctx.obj = CTDataset(data_dir, batch_size, patch_size, weights)
+		ctx.obj.norm_setup(normalize_over, circ_mask_ratio)
 		log.log("Initialize", f"{data_dir}")
 
 		ctnetwork.use_cuda = torch.cuda.is_available() and cuda
@@ -93,7 +93,7 @@ def utraining(ctx, valid_dir, ckpt_save_path, ckpt_overwrite, report_interval, p
 	else:
 		training_set = FileSet.FULL.load(ctx.obj, shuffle=True)
 		valid_set = CTDataset(valid_dir, ctx.obj.batch_size. ctx.obj.patch_size, ctx.obj.weights)
-		valid_set.set_range(ctx.obj.floor, ctx.obj.ceiling)
+		valid_set.set_range(ctx.obj.floor, ctx.obj.ceiling, ctx.obj.circ_mask_ratio)
 		validation_set = FileSet.FULL.load(valid_set, shuffle=False)
 
 	# Initialize model and train
