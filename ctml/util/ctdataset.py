@@ -155,7 +155,9 @@ class CTDenoisingSet(CTDataset):
 
 		# Generate Patches of Normalized Data
 		if self.circ_mask_ratio:
+			self.__img = self.__img.reshape((1,) + self.img.shape)
 			circ_mask(self.__img, axis=0, ratio=self.circ_mask_ratio, val=np.min(self.__img))
+			self.__img = self.__img.reshape(self.img.shape[1:])
 
 		if floor is not None and ceiling is not None:
 			self.__img = self._norma(self.__img)
